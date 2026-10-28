@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: notarium
+    runtime: node
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: notarium-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NOTARIUM_DATA_FILE
+        value: /var/data/notarium-server-data.json
+      - key: PUBLIC_URL
+        sync: false

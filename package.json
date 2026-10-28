@@ -1,0 +1,14 @@
+{
+  "name": "harmonette-local",
+  "private": true,
+  "scripts": {
+    "start": "node server/notarium-server.js",
+    "build": "node scripts/build-static.js",
+    "legacy": "node legacy/server.js"
+  },
+  "dependencies": {
+    "chart.js": "^4.6.1",
+    "jszip": "^3.10.2",
+    "opensheetmusicdisplay": "^2.2.1"
+  }
+}
