@@ -5,7 +5,7 @@ const root = path.resolve(__dirname);
 const files = [
   'icone.png',
   'notarium.css',
-  'catalog.json',
+  'catalog.js',
   'app.js',
   'api-url.js',
   'media-store.js',
@@ -29,7 +29,7 @@ async function build() {
     `$1${apiBase.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}$2`
   );
   await fs.writeFile(path.join(root, 'index.html'), configuredHtml, 'utf8');
-  console.log(`Harmonette pronta na raiz${apiBase ? ` usando API ${apiBase}` : ' em modo local'}`);
+  console.log(`Harmonette pronta na raiz${apiBase ? ` usando API ${apiBase}` : ''}`);
 }
 
 build().catch(error => {

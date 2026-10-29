@@ -1,5 +1,6 @@
+import { catalog } from './catalog.js';
+
 const STORAGE_KEY = 'notarium-local-v1';
-const DEFAULT_DATA_URL = new URL('catalog.json', import.meta.url);
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -244,12 +245,7 @@ export async function loadModel() {
     catch { throw new Error('Os dados salvos neste navegador estão corrompidos. Importe uma cópia JSON válida para continuar.'); }
     return validateModel(parsed);
   }
-  const response = await fetch(DEFAULT_DATA_URL);
-  if (!response.ok) throw new Error(`Não foi possível carregar o arquivo inicial de dados (${response.status}). Abra o projeto pelo Live Server.`);
-  let initial;
-  try { initial = await response.json(); }
-  catch { throw new Error('O arquivo catalog.json não contém JSON válido.'); }
-  const model = validateModel(initial);
+  const model = validateModel(catalog);
   saveModel(model);
   return model;
 }

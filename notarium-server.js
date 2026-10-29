@@ -10,6 +10,14 @@ const port = Number(process.env.PORT) || 4173;
 const dataFile = process.env.NOTARIUM_DATA_FILE
   ? path.resolve(process.env.NOTARIUM_DATA_FILE)
   : path.join(root, 'notarium-server-data.json');
+const dataDirectory = path.dirname(dataFile);
+const dataFiles = {
+  users: path.join(dataDirectory, 'notarium-users.js'),
+  model: path.join(dataDirectory, 'notarium-model.js'),
+  media: path.join(dataDirectory, 'notarium-media.js'),
+  notifications: path.join(dataDirectory, 'notarium-notifications.js'),
+  examSessions: path.join(dataDirectory, 'notarium-exam-sessions.js')
+};
 const sessions = new Map();
 const loginFailures = new Map();
 const mimeTypes = {
@@ -55,24 +63,46 @@ function emptyModel() {
 }
 
 async function loadStore() {
-  await fs.mkdir(path.dirname(dataFile), { recursive: true });
+  await fs.mkdir(dataDirectory, { recursive: true });
+  let saved = null;
   try {
-    const saved = JSON.parse(await fs.readFile(dataFile, 'utf8'));
+    saved = JSON.parse(await fs.readFile(dataFile, 'utf8'));
     if (!saved || !Array.isArray(saved.users)
         || (saved.model !== undefined && saved.model !== null && typeof saved.model !== 'object')) {
       throw new Error('O arquivo de dados do servidor tem formato inválido.');
     }
-    store = {
-      users: saved.users,
-      model: saved.model || null,
-      media: Array.isArray(saved.media) ? saved.media : [],
-      notifications: Array.isArray(saved.notifications) ? saved.notifications : [],
-      examSessions: Array.isArray(saved.examSessions) ? saved.examSessions : []
-    };
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    await saveStore();
   }
+
+  async function readJavaScriptData(file, fallback) {
+    try {
+      await fs.access(file);
+      delete require.cache[require.resolve(file)];
+      return require(file);
+    } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'MODULE_NOT_FOUND') return fallback;
+      throw error;
+    }
+  }
+
+  store = {
+    users: await readJavaScriptData(dataFiles.users, saved ? saved.users : []),
+    model: await readJavaScriptData(dataFiles.model, saved ? saved.model : null),
+    media: await readJavaScriptData(dataFiles.media, saved ? saved.media : []),
+    notifications: await readJavaScriptData(dataFiles.notifications, saved ? saved.notifications : []),
+    examSessions: await readJavaScriptData(dataFiles.examSessions, saved ? saved.examSessions : [])
+  };
+  if (!Array.isArray(store.users)) store.users = [];
+  if (!store.model || typeof store.model !== 'object') store.model = null;
+  if (!Array.isArray(store.media)) store.media = [];
+  if (!Array.isArray(store.notifications)) store.notifications = [];
+  if (!Array.isArray(store.examSessions)) store.examSessions = [];
+
+  const hasJavaScriptData = await Promise.all(Object.values(dataFiles).map(async file => {
+    try { await fs.access(file); return true; } catch { return false; }
+  })).then(values => values.every(Boolean));
+  if (saved && !hasJavaScriptData) await saveStore();
 
   const teacher = store.users.find(item => item.role === 'teacher');
   if (!teacher) {
@@ -91,9 +121,18 @@ async function loadStore() {
 
 function saveStore() {
   const operation = writeQueue.then(async () => {
-    const temporaryFile = `${dataFile}.tmp`;
-    await fs.writeFile(temporaryFile, JSON.stringify(store), { encoding: 'utf8', mode: 0o600 });
-    await fs.rename(temporaryFile, dataFile);
+    for (const [key, value] of Object.entries(store)) {
+      const file = dataFiles[key];
+      if (!file) continue;
+      const temporaryFile = `${file}.tmp-${process.pid}`;
+      await fs.writeFile(temporaryFile, `module.exports = ${JSON.stringify(value, null, 2)};\n`, {
+        encoding: 'utf8',
+        mode: 0o600
+      });
+      await fs.rename(temporaryFile, file);
+      delete require.cache[require.resolve(file)];
+    }
+    await fs.rm(dataFile, { force: true });
   });
   writeQueue = operation.catch(() => {});
   return operation;
@@ -969,7 +1008,7 @@ const publicFiles = new Set([
   '/index.html',
   '/icone.png',
   '/notarium.css',
-  '/catalog.json',
+  '/catalog.js',
   '/app.js',
   '/api-url.js',
   '/media-store.js',
@@ -1069,7 +1108,7 @@ async function start() {
   server.listen(port, '0.0.0.0', () => {
     console.log(`Notarium pronto em http://127.0.0.1:${port}/`);
     console.log(`Acesso na rede local: http://${localAddress()}:${port}/`);
-    console.log(`Dados de contas e conteúdo: ${dataFile}`);
+    console.log(`Dados de contas e conteúdo: arquivos JavaScript em ${dataDirectory}`);
     if (process.env.NODE_ENV === 'production' && !process.env.PUBLIC_URL) {
       console.warn('Configure PUBLIC_URL com a URL HTTPS pública para gerar links corretos para os alunos.');
     }

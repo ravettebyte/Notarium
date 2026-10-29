@@ -301,13 +301,13 @@ function profileAvatar(profile, demo = false) {
   return `<span class="profile-avatar${demo ? ' demo-avatar-profile' : ''}">${image}</span>`;
 }
 
-function persist(message = 'Alterações salvas neste navegador.') {
+function persist(message = 'Alterações salvas na conta.') {
   try {
     model = saveModel(model);
     queueRemoteModelSave();
     render();
     if (message) toast(accountSession?.role === 'teacher'
-      ? 'Alterações salvas localmente; sincronização com o servidor em andamento.'
+      ? 'Alterações sincronizadas com o servidor.'
       : message);
   } catch (error) {
     toast(error.message, 'error');
@@ -437,14 +437,14 @@ function shellMarkup() {
         ${teacher ? navItem('alunos', 'Alunos', 'group') : ''}
       </nav>
       <div class="header-actions">
-        <span class="local-pill"><i></i> ${accountSession ? 'Conta online' : 'Modo local'}</span>
+        <span class="local-pill"><i></i> Conta online</span>
         <button class="button theme-button settings-gear" type="button" data-action="settings" aria-label="Abrir configurações">${icons.settings}</button>
         <button class="button theme-button" type="button" data-action="theme" id="theme-toggle" aria-label="Alternar tema"></button>
-        <button class="profile-button" type="button" data-action="profile" aria-label="Perfil de ${esc(currentProfile().displayName || 'Músico')}">${profileAvatar(currentProfile())}<span class="profile-copy"><strong>${esc(currentProfile().displayName || 'Músico')}</strong><small>${teacher ? 'Professor' : 'Aluno'} · ${accountSession ? 'conta online' : 'perfil local'}</small></span><span class="chevron">⌄</span></button>
+        <button class="profile-button" type="button" data-action="profile" aria-label="Perfil de ${esc(currentProfile().displayName || 'Músico')}">${profileAvatar(currentProfile())}<span class="profile-copy"><strong>${esc(currentProfile().displayName || 'Músico')}</strong><small>${teacher ? 'Professor' : 'Aluno'} · conta online</small></span><span class="chevron">⌄</span></button>
       </div>
     </header>
     <main class="main-content">
-      <div class="breadcrumb"><span>Notarium</span><span aria-hidden="true">/</span><strong id="current-crumb"></strong><span class="local-note">${accountSession ? 'Conta e conteúdo sincronizados pelo servidor' : 'Dados somente neste navegador'}</span></div>
+      <div class="breadcrumb"><span>Notarium</span><span aria-hidden="true">/</span><strong id="current-crumb"></strong><span class="local-note">Conta e conteúdo sincronizados pelo servidor</span></div>
       <div class="app-content" id="app-content"></div>
     </main>
     <footer class="app-footer"><strong>RAVETTE</strong><span>Estudo, prática e música em conjunto</span><span class="footer-year">2026</span></footer>
@@ -1085,13 +1085,13 @@ function renderResults() {
     const attachmentsMarkup = (attempt.attachments || []).length
       ? `<section class="attempt-submitted-files"><h3>Arquivos enviados pelo aluno</h3>${attempt.attachments.map(file => uploadedMediaMarkup(file.id, file.name, file.type)).join('')}</section>`
       : '';
-    return `<article class="response-card${attempt.isDemo ? ' demo-response' : ''}"><div class="response-card-head"><div><span class="status-tag ${manual.length ? 'draft' : 'completed'}">${manual.length ? `${manual.length} para corrigir` : 'Entregue'}</span>${attempt.isDemo ? '<span class="demo-label">DEMONSTRAÇÃO</span>' : '<span class="response-real-label">Perfil local</span>'}<h3>${esc(attempt.profileName)}</h3><p>${new Date(attempt.createdAt).toLocaleString('pt-BR')}${attempt.durationSeconds ? ` · levou ${formatDuration(attempt.durationSeconds)}` : ''}</p>${reviewAction}${teacherReviewMarkup}</div><strong>${score.earned} <small>/ ${score.possible} pts corrigidos</small></strong></div><details class="individual-answers"><summary>Ver respostas individuais (${attempt.answers.length})</summary><ul>${answerRows}</ul></details>${attachmentsMarkup}${manual.length ? `<div class="manual-grade">${manual.map(answer => `<label class="field-label"><span>${richTextMarkup(answer.prompt)}</span><input type="number" min="0" max="${Number(answer.points) || 1}" step="0.5" value="${Number(answer.manualScore) || 0}" data-grade-answer="${esc(answer.questionId)}" data-attempt="${esc(attempt.id)}"></label>`).join('')}<button class="button secondary small-button" type="button" data-action="save-grade" data-id="${esc(attempt.id)}">Salvar correção manual</button></div>` : ''}</article>`;
+    return `<article class="response-card${attempt.isDemo ? ' demo-response' : ''}"><div class="response-card-head"><div><span class="status-tag ${manual.length ? 'draft' : 'completed'}">${manual.length ? `${manual.length} para corrigir` : 'Entregue'}</span>${attempt.isDemo ? '<span class="demo-label">DEMONSTRAÇÃO</span>' : '<span class="response-real-label">Conta real</span>'}<h3>${esc(attempt.profileName)}</h3><p>${new Date(attempt.createdAt).toLocaleString('pt-BR')}${attempt.durationSeconds ? ` · levou ${formatDuration(attempt.durationSeconds)}` : ''}</p>${reviewAction}${teacherReviewMarkup}</div><strong>${score.earned} <small>/ ${score.possible} pts corrigidos</small></strong></div><details class="individual-answers"><summary>Ver respostas individuais (${attempt.answers.length})</summary><ul>${answerRows}</ul></details>${attachmentsMarkup}${manual.length ? `<div class="manual-grade">${manual.map(answer => `<label class="field-label"><span>${richTextMarkup(answer.prompt)}</span><input type="number" min="0" max="${Number(answer.points) || 1}" step="0.5" value="${Number(answer.manualScore) || 0}" data-grade-answer="${esc(answer.questionId)}" data-attempt="${esc(attempt.id)}"></label>`).join('')}<button class="button secondary small-button" type="button" data-action="save-grade" data-id="${esc(attempt.id)}">Salvar correção manual</button></div>` : ''}</article>`;
   }).join('');
   const noAnswer = `<p class="chart-empty">Ainda não há respostas registradas para este indicador.</p>`;
-  return `${pageHeading('ACOMPANHAMENTO LOCAL', 'Respostas', 'Painel por exercício: respostas, correções e desempenho registrados neste navegador.', `<label class="results-select-label">Exercício<select id="results-exercise-select">${cards}</select></label>`)}
+  return `${pageHeading('ACOMPANHAMENTO DA TURMA', 'Respostas', 'Painel por exercício: respostas, correções e desempenho registrados na conta do servidor.', `<label class="results-select-label">Exercício<select id="results-exercise-select">${cards}</select></label>`)}
     <section class="results-toolbar"><div><span class="status-tag ${exerciseStatus(selected)}">${esc({ draft: 'Rascunho', published: 'Publicado', closed: 'Encerrado', archived: 'Arquivado' }[exerciseStatus(selected)])}</span><strong>${esc(selected.title)}</strong></div><div class="results-actions">${button('＋ Simular 5 participantes', 'simulate-demo', 'primary', `data-id="${esc(selected.id)}"`)}${demoAttempts.length ? button('Limpar respostas demo', 'clear-demo', 'secondary', `data-id="${esc(selected.id)}"`) : ''}</div></section>
-    <div class="demo-explainer"><span aria-hidden="true">ⓘ</span><p>A turma de demonstração contém ${demoParticipants.length} participantes fictícios. Ela serve somente para testar; resultados reais do perfil local aparecem identificados separadamente. Questões pendentes ficam fora das taxas de erro e dos aproveitamentos.</p></div>
-    <section class="results-kpis"><article><span>Participantes demo</span><strong>${demoResponders}/${demoParticipants.length}</strong><small>${demoParticipants.length - demoResponders} ainda não responderam</small></article><article><span>Tentativas locais reais</span><strong>${realAttempts.length}</strong><small>Sem lista de alunos reais neste modo local</small></article><article><span>Acertos · erros</span><strong>${correctAnswers} · ${incorrectAnswers}</strong><small>${reviewedAnswers.length ? `${Math.round(correctAnswers / reviewedAnswers.length * 100)}% corretas nas corrigidas` : 'Sem respostas corrigidas'}</small></article><article><span>Pendentes de correção</span><strong>${pendingCount}</strong><small>Não entram como incorretas</small></article><article><span>Média de pontos</span><strong>${averagePoints}</strong><small>${averagePercent === null ? 'Sem pontuação corrigida' : `${averagePercent}% de aproveitamento corrigido`}</small></article></section>
+    <div class="demo-explainer"><span aria-hidden="true">ⓘ</span><p>A turma de demonstração contém ${demoParticipants.length} participantes fictícios. Ela serve somente para testar; resultados reais da conta aparecem identificados separadamente. Questões pendentes ficam fora das taxas de erro e dos aproveitamentos.</p></div>
+    <section class="results-kpis"><article><span>Participantes demo</span><strong>${demoResponders}/${demoParticipants.length}</strong><small>${demoParticipants.length - demoResponders} ainda não responderam</small></article><article><span>Tentativas reais</span><strong>${realAttempts.length}</strong><small>Registros enviados pelas contas dos alunos</small></article><article><span>Acertos · erros</span><strong>${correctAnswers} · ${incorrectAnswers}</strong><small>${reviewedAnswers.length ? `${Math.round(correctAnswers / reviewedAnswers.length * 100)}% corretas nas corrigidas` : 'Sem respostas corrigidas'}</small></article><article><span>Pendentes de correção</span><strong>${pendingCount}</strong><small>Não entram como incorretas</small></article><article><span>Média de pontos</span><strong>${averagePoints}</strong><small>${averagePercent === null ? 'Sem pontuação corrigida' : `${averagePercent}% de aproveitamento corrigido`}</small></article></section>
     <div class="results-chart-grid"><section class="results-panel"><div class="results-panel-heading"><h2>Participação · demonstração</h2><span>${demoResponders} de ${demoParticipants.length} responderam</span></div><div class="chart-wrap chart-doughnut"><canvas id="participation-chart" aria-label="Participação da turma de demonstração"></canvas></div></section><section class="results-panel"><div class="results-panel-heading"><h2>Respostas corrigidas</h2><span>${reviewedAnswers.length} avaliadas · ${pendingCount} pendentes</span></div><div class="chart-wrap chart-doughnut"><canvas id="review-chart" aria-label="Percentual de respostas corretas, incorretas e pendentes"></canvas></div></section><section class="results-panel results-panel-wide"><div class="results-panel-heading"><h2>Desempenho por questão</h2><span>Questões pendentes aparecem separadas</span></div>${questionStats.length ? '<div class="chart-wrap chart-question"><canvas id="question-chart" aria-label="Acertos, erros e pendências por questão"></canvas></div>' : noAnswer}</section><section class="results-panel results-panel-wide"><div class="results-panel-heading"><h2>Evolução das tentativas</h2><span>Somente registros reais do exercício</span></div>${timelineRecords.length >= 3 ? '<div class="chart-wrap chart-timeline"><canvas id="timeline-chart" aria-label="Evolução do aproveitamento por tentativa"></canvas></div>' : '<p class="chart-empty">Ainda é cedo para mostrar uma evolução confiável. São necessárias pelo menos três tentativas locais corrigidas.</p>'}</section></div>
     <div class="results-lower-grid"><section class="results-panel"><div class="results-panel-heading"><h2>Questões com mais erros</h2><span>Entre respostas corrigidas</span></div>${difficultQuestions.length ? `<ol class="difficulty-list">${difficultQuestions.map(item => `<li><span><strong>Q${item.index + 1} · ${richTextMarkup(item.question.prompt)}</strong><small>${item.correct} acerto(s) · ${item.incorrect} erro(s) · ${item.pending} pendente(s)</small></span><b>${item.incorrect}</b></li>`).join('')}</ol>` : noAnswer}</section><section class="results-panel"><div class="results-panel-heading"><h2>Participantes da demonstração</h2><span>Dados fictícios</span></div><div class="demo-roster">${demoParticipants.map(participant => `<div class="demo-roster-person"><span class="demo-avatar">${participant.initials}</span><span>${esc(participant.name)}</span><span class="status-tag ${demoAttempts.some(attempt => attempt.demoParticipantId === participant.id) ? 'completed' : 'draft'}">${demoAttempts.some(attempt => attempt.demoParticipantId === participant.id) ? 'Respondeu' : 'Não respondeu'}</span></div>`).join('')}</div></section></div>
     <section class="results-panel individual-results"><div class="results-panel-heading"><div><h2>Respostas individuais</h2><p>Notas, respostas, acertos e itens aguardando correção</p></div><span>${attempts.length} tentativa(s)</span></div>${rows ? `<div class="response-list">${rows}</div>` : empty('Nenhuma resposta recebida ainda.', 'Simule participantes fictícios ou envie o exercício usando o perfil local de aluno.', '', '✓')}</section>`;
@@ -1303,12 +1303,12 @@ function renderConfigurations() {
       <label class="field-label">Nota do clique<select id="click-sound-note">${clickNotes}</select></label>
       <label class="field-label">Volume do clique <output id="click-volume-output">${Number(localStorage.getItem('notarium-click-volume') || 300)}%</output><input id="click-sound-volume" type="range" min="80" max="300" step="10" value="${Number(localStorage.getItem('notarium-click-volume') || 300)}"></label>
       <p class="form-help">O som de notificações permanece fixo e independente do som de clique.</p></section>
-      <section class="settings-card"><p class="eyebrow">SALVAMENTO AUTOMÁTICO</p><h2>${accountSession ? 'Conta online' : 'Modo local'}</h2><p>${accountSession ? 'Conteúdo e respostas são sincronizados automaticamente com o servidor.' : 'Seus dados são guardados automaticamente neste navegador. Para sincronização entre dispositivos, entre em uma conta online.'}</p><small class="privacy-note">Não há opções de cópia de segurança nesta tela.</small></section></div>`;
+      <section class="settings-card"><p class="eyebrow">SALVAMENTO AUTOMÁTICO</p><h2>Conta online</h2><p>Conteúdo, respostas, alunos e avaliações são sincronizados automaticamente e salvos no servidor.</p><small class="privacy-note">Não há opções de cópia de segurança nesta tela.</small></section></div>`;
 }
 
 function renderAccountLogin() {
   const setup = accountSetupNeeded;
-  return `<main class="account-login-page"><section class="account-login-card"><img class="account-login-logo" src="icone.png" alt=""><p class="eyebrow">NOTARIUM · ACESSO ONLINE</p><h1>${setup ? 'Configure sua conta de professor' : 'Entre na sua conta'}</h1><p class="page-description">${setup ? 'Crie a primeira conta para administrar a turma e cadastrar acessos individuais para seus alunos.' : 'Use o usuário e a senha que o professor criou para você.'}</p><form id="account-access-form" class="stack-form account-access-form">${setup ? `<label class="field-label">Nome de exibição<input name="name" maxlength="60" required autocomplete="name" placeholder="Como você será identificado"></label>` : ''}<label class="field-label">Nome de usuário<input name="username" minlength="3" maxlength="30" required autocomplete="username" placeholder="ex.: ana.silva"></label><label class="field-label">Senha<input name="password" type="password" minlength="${setup ? '10' : '1'}" maxlength="256" required autocomplete="${setup ? 'new-password' : 'current-password'}"></label>${setup ? '<small class="form-help">Use de 3 a 30 caracteres no usuário e uma senha de pelo menos 10 caracteres.</small>' : ''}<p class="account-form-error" role="alert">${esc(accountError)}</p><button class="button primary" type="submit">${setup ? 'Criar conta de professor' : 'Entrar'}</button></form><button class="button secondary" type="button" data-action="exit-account-login">Continuar no modo local</button><small class="privacy-note">As contas são armazenadas no servidor do Notarium. Use uma hospedagem com HTTPS e armazenamento persistente antes de compartilhar publicamente.</small></section></main>`;
+  return `<main class="account-login-page"><section class="account-login-card"><img class="account-login-logo" src="icone.png" alt=""><p class="eyebrow">NOTARIUM · ACESSO ONLINE</p><h1>${setup ? 'Configure sua conta de professor' : 'Entre na sua conta'}</h1><p class="page-description">${setup ? 'Crie a primeira conta para administrar a turma e cadastrar acessos individuais para seus alunos.' : 'Use o usuário e a senha que o professor criou para você.'}</p><form id="account-access-form" class="stack-form account-access-form">${setup ? `<label class="field-label">Nome de exibição<input name="name" maxlength="60" required autocomplete="name" placeholder="Como você será identificado"></label>` : ''}<label class="field-label">Nome de usuário<input name="username" minlength="3" maxlength="30" required autocomplete="username" placeholder="ex.: ana.silva"></label><label class="field-label">Senha<input name="password" type="password" minlength="${setup ? '10' : '1'}" maxlength="256" required autocomplete="${setup ? 'new-password' : 'current-password'}"></label>${setup ? '<small class="form-help">Use de 3 a 30 caracteres no usuário e uma senha de pelo menos 10 caracteres.</small>' : ''}<p class="account-form-error" role="alert">${esc(accountError)}</p><button class="button primary" type="submit">${setup ? 'Criar conta de professor' : 'Entrar'}</button></form><small class="privacy-note">As contas são armazenadas automaticamente no servidor. O acesso exige uma conta válida.</small></section></main>`;
 }
 
 function renderStudents() {
@@ -1460,7 +1460,7 @@ async function logoutAccount() {
   await showAccountLogin();
   toast(serverLogoutFailed
     ? 'Sessão encerrada neste navegador. O servidor não respondeu; a sessão será descartada quando ele reiniciar.'
-    : 'Sessão encerrada. O modo local continua disponível.');
+    : 'Sessão encerrada. Entre novamente com sua conta.');
 }
 
 async function refreshStudents() {
@@ -3429,7 +3429,7 @@ async function encodeProfileAvatar(file) {
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   const result = canvas.toDataURL('image/jpeg', 0.78);
-  if (result.length > 300_000) throw new Error('A imagem ainda é grande demais para o perfil local; escolha outra imagem.');
+  if (result.length > 300_000) throw new Error('A imagem ainda é grande demais para o perfil; escolha outra imagem.');
   return result;
 }
 
@@ -3482,7 +3482,7 @@ async function saveProfile(form) {
   view = 'perfil';
   selectedProfileId = null;
   profileTab = 'profile';
-  persist(accountSession ? 'Perfil da conta atualizado.' : 'Perfil local atualizado.');
+  persist(accountSession ? 'Perfil da conta atualizado.' : 'Perfil atualizado.');
 }
 
 function previewLesson(dialog) {
@@ -3545,11 +3545,6 @@ root.addEventListener('click', event => {
     }).catch(error => toast(error.message, 'error'));
   } else if (action === 'account-login') {
     showAccountLogin();
-  } else if (action === 'exit-account-login') {
-    accountError = '';
-    view = 'inicio';
-    history.replaceState(null, '', location.pathname);
-    render();
   } else if (action === 'open-students') {
     dialog?.close();
     navigate('alunos');
@@ -3685,7 +3680,7 @@ root.addEventListener('click', event => {
     applyProfileMemberFilters();
   } else if (action === 'clear-avatar') {
     currentProfile().avatarDataUrl = '';
-    persist('Foto removida do perfil local.');
+    persist('Foto removida do perfil da conta.');
   } else if (action === 'play-typed-chord') {
     const input = actionButton.closest('.quiz-question')?.querySelector('.music-note-answer');
     try {

@@ -1,0 +1,102 @@
+module.exports = {
+  "schemaVersion": 1,
+  "profile": {
+    "displayName": "Ravette",
+    "username": "prof.ravette",
+    "bio": "",
+    "avatarDataUrl": "",
+    "defaultOctave": 4,
+    "role": "teacher",
+    "theme": "light"
+  },
+  "blocks": [],
+  "exerciseBlocks": [
+    {
+      "id": "c2426bf1-2bba-41cb-a805-1a88a8f0110f",
+      "title": "Leitura rítmica",
+      "description": "Validação do carregamento de partituras",
+      "color": "blue",
+      "decoration": "notes",
+      "order": 1,
+      "createdAt": "2026-10-28T21:26:50.095Z"
+    }
+  ],
+  "lessons": [],
+  "exercises": [
+    {
+      "id": "f0ccda6a-550d-48f6-a3b0-cd5f2d010a54",
+      "title": "xvcbvTeste de abertura final",
+      "instructions": "",
+      "difficulty": "Iniciante",
+      "status": "published",
+      "published": true,
+      "showAnswers": false,
+      "exerciseBlockId": "c2426bf1-2bba-41cb-a805-1a88a8f0110f",
+      "assessment": null,
+      "questions": [
+        {
+          "id": "d855efad-7a29-4b7f-9c86-ffbbf808049a",
+          "type": "choice",
+          "prompt": "Qual é o nome da primeira nota?",
+          "points": 1,
+          "options": [
+            "Dó",
+            "Ré",
+            "Mi"
+          ],
+          "answer": "Dó",
+          "feedback": "",
+          "acceptedAnswers": [],
+          "manual": false
+        },
+        {
+          "id": "f5670137-01c3-4073-8752-58b2f1e5cd03",
+          "type": "score",
+          "prompt": "♯dsfdgnf",
+          "points": 1,
+          "answer": "",
+          "feedback": "",
+          "acceptedAnswers": [],
+          "manual": true,
+          "scoreSource": "upload",
+          "musicMediaId": "c61679b6-f189-400a-8b47-1c33c11b7db9",
+          "musicMediaName": "Partitura sem título.mxl",
+          "musicMediaType": "application/vnd.recordare.musicxml",
+          "musicMediaSize": 2087,
+          "musicUrl": "",
+          "musicXml": "",
+          "measure": 1
+        },
+        {
+          "id": "f6ef71e8-6d18-42d7-9061-f9ec9a8addc4",
+          "type": "chord",
+          "prompt": "dsfdgfh",
+          "points": 1,
+          "answer": "",
+          "feedback": "",
+          "acceptedAnswers": [],
+          "manual": false,
+          "expectedNotes": [
+            "d",
+            "f#",
+            "a"
+          ],
+          "assemblyOrder": [],
+          "assemblyHints": [],
+          "correctionCriterion": "notes",
+          "expectedIntervals": [],
+          "ignoreOctave": false,
+          "acceptEnharmonic": true,
+          "chordOrder": "any",
+          "referenceNotes": []
+        }
+      ],
+      "lessonIds": [],
+      "createdAt": "2026-10-28T21:27:16.493Z",
+      "updatedAt": "2026-10-28T21:32:29.184Z"
+    }
+  ],
+  "attempts": [],
+  "trails": [],
+  "trailSettings": []
+};
