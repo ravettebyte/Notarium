@@ -2,6 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const root = path.resolve(__dirname);
+const output = path.join(root, 'dist');
 const files = [
   'icone.png',
   'notarium.css',
@@ -14,13 +15,16 @@ const files = [
   'storage.js',
   'chart.umd.js',
   'jszip.min.js',
-  'opensheetmusicdisplay.min.js'
+  'opensheetmusicdisplay.min.js',
+  '_headers',
+  '_redirects'
 ];
 
 async function build() {
+  await fs.rm(output, { recursive: true, force: true });
+  await fs.mkdir(output, { recursive: true });
   for (const file of files) {
-    const source = path.join(root, file);
-    await fs.access(source);
+    await fs.copyFile(path.join(root, file), path.join(output, file));
   }
   const apiBase = String(process.env.NOTARIUM_API_URL || '').trim().replace(/\/+$/, '');
   const html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
@@ -28,8 +32,8 @@ async function build() {
     /(<meta name="notarium-api-base" content=")[^"]*(">)/,
     `$1${apiBase.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}$2`
   );
-  await fs.writeFile(path.join(root, 'index.html'), configuredHtml, 'utf8');
-  console.log(`Harmonette pronta na raiz${apiBase ? ` usando API ${apiBase}` : ''}`);
+  await fs.writeFile(path.join(output, 'index.html'), configuredHtml, 'utf8');
+  console.log(`Harmonette pronta em dist/${apiBase ? ` usando API ${apiBase}` : ''}`);
 }
 
 build().catch(error => {

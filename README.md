@@ -43,7 +43,7 @@ Também é possível hospedar a interface no Netlify e a API em outro serviço N
 
 1. Hospede `notarium-server.js` e configure `PUBLIC_URL` com a URL do site e `CORS_ORIGIN` com o domínio HTTPS exato do frontend. Não use `*` para contas autenticadas.
 2. No Netlify, defina `NOTARIUM_API_URL` com a origem HTTPS da API, sem barra final.
-3. Use o build `npm run build`; o `netlify.toml` publica os arquivos soltos na raiz.
+3. Use o build `npm run build`; ele copia apenas os arquivos públicos para `dist/`, que é a pasta publicada pelo `netlify.toml`. A função da API fica em `netlify/functions/api.js`.
 
 O build do Netlify sem `NOTARIUM_API_URL` fica em modo local: não oferece login online nem sincroniza contas, notificações, respostas ou arquivos enviados. Não publique dados reais sem configurar a API, HTTPS e armazenamento persistente. Faça um backup antes de migrar os dados locais.
 
