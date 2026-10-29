@@ -2357,6 +2357,9 @@ function render() {
     staticTabs.hidden = !accountSession || view === 'login' || view === 'loading';
     staticTabs.querySelectorAll('[data-view]').forEach(button => {
       button.classList.toggle('active', button.dataset.view === view);
+      if (button.dataset.view === 'alunos') {
+        button.hidden = accountSession?.role !== 'teacher';
+      }
     });
   }
   if (view === 'login') {
