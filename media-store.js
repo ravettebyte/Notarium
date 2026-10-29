@@ -91,7 +91,7 @@ export async function getMediaFile(id) {
   let response;
   try {
     response = await fetch(apiUrl(`/api/media/${encodeURIComponent(id)}`), {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: 'Bearer ' + token },
     });
   } catch {
     throw new Error('Não foi possível conectar ao servidor para carregar este material.');

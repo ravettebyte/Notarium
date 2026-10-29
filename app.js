@@ -199,7 +199,7 @@ function currentProfile() {
 async function accountRequest(path, options = {}, token = accountToken) {
   const headers = new Headers(options.headers || {});
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (token) headers.set('Authorization', 'Bearer ' + token);
   let response;
   try {
     response = await fetch(apiUrl(path), { ...options, headers });
@@ -1352,14 +1352,6 @@ function showLoginLoading() {
 
 async function showAccountLogin() {
   accountError = '';
-  const configuredApiBase = document.querySelector('meta[name="notarium-api-base"]')?.content.trim();
-  if (!configuredApiBase) {
-    localAccessMode = true;
-    accountSetupNeeded = !loadLocalTeacher();
-    view = 'login';
-    render();
-    return;
-  }
   try {
     const setup = await accountRequest('/api/setup', {}, '');
     accountSetupNeeded = !setup.teacherExists;
