@@ -2,6 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const root = path.resolve(__dirname);
+const output = path.join(root, 'dist');
 const files = [
   'icone.png',
   'notarium.css',
@@ -18,9 +19,10 @@ const files = [
 ];
 
 async function build() {
+  await fs.mkdir(output, { recursive: true });
   for (const file of files) {
     const source = path.join(root, file);
-    await fs.access(source);
+    await fs.copyFile(source, path.join(output, file));
   }
   const apiBase = String(process.env.NOTARIUM_API_URL || '').trim().replace(/\/+$/, '');
   const html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
@@ -28,8 +30,8 @@ async function build() {
     /(<meta name="notarium-api-base" content=")[^"]*(">)/,
     `$1${apiBase.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}$2`
   );
-  await fs.writeFile(path.join(root, 'index.html'), configuredHtml, 'utf8');
-  console.log(`Harmonette pronta na raiz${apiBase ? ` usando API ${apiBase}` : ''}`);
+  await fs.writeFile(path.join(output, 'index.html'), configuredHtml, 'utf8');
+  console.log('Notarium pronto para publicação.');
 }
 
 build().catch(error => {

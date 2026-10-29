@@ -4,6 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
 
+function createApi(options = {}) {
 const root = path.resolve(__dirname);
 const publicRoot = root;
 const port = Number(process.env.PORT) || 4173;
@@ -120,6 +121,7 @@ async function loadStore() {
 }
 
 function saveStore() {
+  if (options.persist) return options.persist(store);
   const operation = writeQueue.then(async () => {
     for (const [key, value] of Object.entries(store)) {
       const file = dataFiles[key];
@@ -296,7 +298,7 @@ function referencedMediaIds(model) {
 
 function portalUrl(request) {
   if (process.env.PUBLIC_URL) return new URL('/?login=1', process.env.PUBLIC_URL).href;
-  return new URL('/?login=1', `http://${request.headers.host || 'localhost'}`).href;
+  return new URL('/?login=1', `${request.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'}://${request.headers.host || 'localhost'}`).href;
 }
 
 function normalizeAnswer(value) {
@@ -1021,7 +1023,7 @@ const publicFiles = new Set([
 ]);
 
 async function handleRequest(request, response) {
-  const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+  const url = new URL(request.url, `${request.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'}://${request.headers.host || 'localhost'}`);
   if (url.pathname.startsWith('/api/')) {
     const corsAllowed = allowCorsOrigin(request, response);
     if (request.method === 'OPTIONS') {
@@ -1115,7 +1117,22 @@ async function start() {
   });
 }
 
-start().catch(error => {
+return {
+  handleApi,
+  setState(value, savedSessions = [], failures = []) {
+    store = value;
+    sessions.clear();
+    for (const [key, value] of savedSessions) sessions.set(key, value);
+    loginFailures.clear();
+    for (const [key, value] of failures) loginFailures.set(key, value);
+  },
+  getState() { return { store, sessions: [...sessions], failures: [...loginFailures] }; },
+  start
+};
+}
+
+module.exports = { createApi };
+if (require.main === module) createApi().start().catch(error => {
   console.error('Não foi possível iniciar o Notarium:', error.message);
   process.exitCode = 1;
 });
