@@ -18,16 +18,13 @@ Plataforma de aprendizagem musical com aulas, blocos de exercícios, avaliaçõe
 
 3. Abra `http://127.0.0.1:4173` no navegador. Encerre com `Ctrl+C`.
 
-Também é possível abrir `public/index.html` com a extensão **Live Server** do VS Code. Não abra o arquivo diretamente como `file://`: o catálogo inicial é carregado por `fetch`. Para iniciar o servidor Harmonette legado, use `npm.cmd run legacy`; ele continua separado do Notarium.
+Também é possível abrir `index.html` com a extensão **Live Server** do VS Code. Não abra o arquivo diretamente como `file://`: o catálogo inicial é carregado por `fetch`. Para iniciar o servidor Harmonette legado, use `npm.cmd run legacy`; ele continua separado do Notarium.
 
 ## Organização do projeto
 
-- `public/`: interface, estilos, módulos do Notarium, ícone e catálogo inicial.
-- `server/`: servidor Node usado pelo Notarium.
-- `legacy/`: servidor e arquivos antigos do Harmonette, mantidos separados.
-- `data/`: bancos de dados persistentes e arquivos de teste.
-- `backups/`: cópias de segurança locais, excluídas do controle de versão.
-- `scripts/`: build do site; `dist/` é gerada automaticamente e não deve ser editada.
+- Os arquivos principais do Notarium ficam soltos na raiz: interface, estilos, módulos JavaScript, servidor, build, banco de dados e catálogo inicial.
+- Bibliotecas usadas pelo navegador ficam soltas na raiz como arquivos JavaScript separados.
+- Não há pastas de origem para arquivos do Harmonette.
 
 Os arquivos de configuração do npm e do Netlify ficam na raiz para que as ferramentas os encontrem automaticamente.
 
@@ -44,9 +41,9 @@ Use um plano com disco persistente e faça backup do arquivo JSON antes de troca
 
 Também é possível hospedar a interface no Netlify e a API em outro serviço Node com disco persistente:
 
-1. Hospede `server/notarium-server.js` e configure `PUBLIC_URL` com a URL do site e `CORS_ORIGIN` com o domínio HTTPS exato do frontend. Não use `*` para contas autenticadas.
+1. Hospede `notarium-server.js` e configure `PUBLIC_URL` com a URL do site e `CORS_ORIGIN` com o domínio HTTPS exato do frontend. Não use `*` para contas autenticadas.
 2. No Netlify, defina `NOTARIUM_API_URL` com a origem HTTPS da API, sem barra final.
-3. Use o build `npm run build` e a pasta `dist`; o `netlify.toml` já configura esses valores.
+3. Use o build `npm run build`; o `netlify.toml` publica os arquivos soltos na raiz.
 
 O build do Netlify sem `NOTARIUM_API_URL` fica em modo local: não oferece login online nem sincroniza contas, notificações, respostas ou arquivos enviados. Não publique dados reais sem configurar a API, HTTPS e armazenamento persistente. Faça um backup antes de migrar os dados locais.
 
@@ -68,7 +65,7 @@ O build do Netlify sem `NOTARIUM_API_URL` fica em modo local: não oferece login
 - Na aba **Grupo**, a conta de professor pode abrir **Respostas** para revisar participação, aproveitamento, pontuações, dificuldades por questão, respostas individuais e gráficos. Respostas pendentes não são contadas como incorretas.
 - Tema claro/escuro e perfil local ficam salvos neste navegador.
 - Em **Configurações**, escolha o tema, a oitava padrão, a nota e o volume dos cliques. O som de interação vem habilitado por padrão em volume máximo.
-- O catálogo inicial em `public/data/catalog.json` é vazio, sem exemplos apresentados como conteúdo real.
+- O catálogo inicial em `catalog.json` é vazio, sem exemplos apresentados como conteúdo real.
 
 O modo local usa `localStorage` e IndexedDB, vinculados à origem usada pelo navegador. Contas online, alunos, exercícios e respostas são salvos pelo servidor Node em `NOTARIUM_DATA_FILE`. Os dados demonstrativos antigos ficam restritos ao modo local; as telas conectadas a uma conta usam alunos, acessos e respostas reais.
 
@@ -76,7 +73,7 @@ O modo local usa `localStorage` e IndexedDB, vinculados à origem usada pelo nav
 
 No modo local, o perfil professor/aluno é apenas uma visualização do navegador. O grupo fictício e seus indicadores existem somente para demonstração. Com uma conta online, senhas, alunos, conteúdo, mídias, notificações, respostas e presenças são controlados pelo servidor. Gere HTTPS, um domínio público e armazenamento persistente antes de compartilhar o acesso.
 
-O servidor Node legado (`legacy/server.js`) e seus dados em `data/database.json` foram mantidos intactos, mas não são usados pelo Notarium nem importados automaticamente. A aplicação atual não envia os dados locais para esse servidor. Backups locais podem ser guardados em `backups/`; essa pasta fica fora do controle de versão.
+Os arquivos do Harmonette legado foram mantidos na raiz como `legacy-server.js`, `legacy-app.js`, `legacy-platform.js`, `legacy-app.css` e `legacy-style.css`; seus dados ficam em `database.json`. Eles não são usados pelo Notarium nem importados automaticamente. A aplicação atual não envia os dados locais para esse servidor. Backups locais podem ser guardados diretamente na raiz do projeto.
 
 ## Requisitos
 

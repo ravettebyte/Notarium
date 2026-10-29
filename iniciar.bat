@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-node server\notarium-server.js
+node notarium-server.js
 pause

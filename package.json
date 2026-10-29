@@ -2,9 +2,9 @@
   "name": "harmonette-local",
   "private": true,
   "scripts": {
-    "start": "node server/notarium-server.js",
-    "build": "node scripts/build-static.js",
-    "legacy": "node legacy/server.js"
+    "start": "node notarium-server.js",
+    "build": "node build-static.js",
+    "legacy": "node legacy-server.js"
   },
   "dependencies": {
     "chart.js": "^4.6.1",

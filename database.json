@@ -1,0 +1,103 @@
+{
+  "users": [
+    {
+      "id": "b69b8f4b-e0c3-49b4-95e1-d9980c5375dc",
+      "name": "Músico de Teste",
+      "email": "r4vett3@gmail.com",
+      "role": "teacher",
+      "passwordHash": "62b555ec90908677f38d59f2933e9d45:740786bb6f8d73c59b477fe47d0e7039ee7325421e14f3954de92b0b8ddb2c51afde58c41b3df163a56486d527f495bd15807cbc10c600575cbd48c9457e0272",
+      "teacherId": "b69b8f4b-e0c3-49b4-95e1-d9980c5375dc",
+      "blockIds": null,
+      "createdAt": "2026-10-27T16:11:44.822Z",
+      "username": "@ravette",
+      "credentialVersion": 2,
+      "avatarDataUrl": null,
+      "lastSeenAt": "2026-10-28T00:44:05.600Z"
+    }
+  ],
+  "blocks": [
+    {
+      "id": "42f9e5af-2a82-4c9e-b0d3-2a1b2726d674",
+      "teacherId": "b69b8f4b-e0c3-49b4-95e1-d9980c5375dc",
+      "title": "A",
+      "description": "F",
+      "createdAt": "2026-10-27T16:11:57.634Z",
+      "lessons": [
+        {
+          "id": "4b79f670-bfb3-4351-bda0-79e165283919",
+          "title": "gg",
+          "description": "",
+          "published": true,
+          "materials": [],
+          "questions": [
+            {
+              "id": "52b09b64-1f54-4b3b-b937-868898854694",
+              "prompt": "ACORDE DE Dm",
+              "type": "degree",
+              "options": [],
+              "answer": "C2",
+              "region": "C2",
+              "playOnOpen": true
+            }
+          ],
+          "createdAt": "2026-10-27T16:12:22.824Z"
+        },
+        {
+          "id": "416cce41-0de7-49f1-9fd2-18e21057291a",
+          "title": "Exercício",
+          "description": "",
+          "published": true,
+          "materials": [],
+          "questions": [
+            {
+              "id": "f131fdb0-40d7-4b57-9754-1c5f8a142c6f",
+              "prompt": "Faça um Dm",
+              "type": "chord",
+              "options": [],
+              "answer": [],
+              "region": "C3",
+              "playOnOpen": true,
+              "points": 1,
+              "explanation": "",
+              "musicXml": "",
+              "scoreMeasures": []
+            }
+          ],
+          "createdAt": "2026-10-27T23:09:36.993Z"
+        },
+        {
+          "id": "71778e96-18a6-4ecd-95b3-b4b2fc3effb9",
+          "title": "dssdd",
+          "description": "",
+          "published": true,
+          "materials": [],
+          "questions": [
+            {
+              "id": "c6ed28af-0aac-42fa-b40b-84a87e1f7454",
+              "prompt": "sdvsds",
+              "type": "chord",
+              "options": [],
+              "answer": [
+                "D4",
+                "D#4",
+                "G4"
+              ],
+              "region": "C3",
+              "playOnOpen": false,
+              "points": 1,
+              "explanation": "",
+              "musicXml": "",
+              "scoreMeasures": []
+            }
+          ],
+          "createdAt": "2026-10-28T00:21:34.170Z"
+        }
+      ],
+      "color": "blue",
+      "symbol": "♫"
+    }
+  ],
+  "invites": [],
+  "submissions": [],
+  "schemaVersion": 2
+}
