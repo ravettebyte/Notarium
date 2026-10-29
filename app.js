@@ -1354,11 +1354,11 @@ async function showAccountLogin() {
   accountError = '';
   try {
     const setup = await accountRequest('/api/setup', {}, '');
-    accountSetupNeeded = !setup.teacherExists;
+    accountSetupNeeded = false;
     localAccessMode = false;
   } catch (error) {
-    localAccessMode = true;
-    accountSetupNeeded = !loadLocalTeacher();
+    localAccessMode = false;
+    accountSetupNeeded = false;
     accountError = '';
   }
   view = 'login';
@@ -3995,7 +3995,7 @@ root.addEventListener('submit', event => {
     const form = event.target;
     const data = new FormData(form);
     accountError = '';
-    const endpoint = accountSetupNeeded ? '/api/auth/bootstrap' : '/api/auth/login';
+    const endpoint = '/api/auth/login';
     const payload = {
       username: String(data.get('username') || ''),
       password: String(data.get('password') || '')

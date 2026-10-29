@@ -2,6 +2,10 @@ name = "harmonette"
 compatibility_date = "2024-11-01"
 pages_build_output_dir = "."
 
+[vars]
+NOTARIUM_TEACHER_USERNAME = "prof.ravette"
+NOTARIUM_TEACHER_NAME = "Professor Ravette"
+
 [[kv_namespaces]]
 binding = "NOTARIUM_KV"
 id = ""
