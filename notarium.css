@@ -93,7 +93,8 @@ img { max-width: 100%; }
 .brand-copy strong, .brand-copy small { display: block; }
 .brand-copy strong { font-family: Georgia, serif; font-size: 19px; font-weight: 600; letter-spacing: -.025em; }
 .brand-copy small { margin-top: 3px; color: var(--muted); font-size: 10px; }
-.primary-nav { display: flex; min-width: 0; flex: 1; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.primary-nav { position: sticky; z-index: 45; top: 0; display: flex; width: 100%; min-height: 58px; align-items: center; justify-content: center; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 96%, transparent); padding: 8px max(18px, calc((100vw - 1440px) / 2)); backdrop-filter: blur(14px); scrollbar-width: none; }
+.primary-nav[hidden] { display: none !important; }
 .primary-nav::-webkit-scrollbar { display: none; }
 .nav-item {
   position: relative;

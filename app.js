@@ -4,9 +4,7 @@ import { extractRhythmEvents, readMusicXmlFile, readMusicXmlUrl, renderMusicXml 
 import { getMediaFile, getMediaUrl, mediaAsDataUrl, restoreMediaDataUrl, saveMediaFile } from './media-store.js';
 import { apiUrl } from './api-url.js';
 
-const root = document.createElement('div');
-root.id = 'notarium-root';
-document.body.replaceChildren(root);
+const root = document.querySelector('#notarium-root') || document.createElement('div');
 let loadingQuote = null;
 document.documentElement.lang = 'pt-BR';
 document.title = 'Notarium — Aprenda música no seu ritmo';
@@ -230,7 +228,7 @@ function onlineUserModel(source, user) {
 }
 
 function queueRemoteModelSave() {
-  if (accountSession?.role !== 'teacher') return;
+  if (accountSession?.role !== 'teacher' || localAccessMode) return;
   clearTimeout(remoteSaveTimer);
   remoteSaveTimer = setTimeout(async () => {
     try {
@@ -246,7 +244,7 @@ function queueRemoteModelSave() {
 }
 
 async function syncOnlineMedia(mediaId) {
-  if (accountSession?.role !== 'teacher') return;
+  if (accountSession?.role !== 'teacher' || localAccessMode) return;
   const file = await getMediaFile(mediaId);
   const dataUrl = await mediaAsDataUrl(mediaId);
   await accountRequest('/api/media', {
@@ -256,7 +254,7 @@ async function syncOnlineMedia(mediaId) {
 }
 
 async function syncReferencedMedia() {
-  if (accountSession?.role !== 'teacher') return;
+  if (accountSession?.role !== 'teacher' || localAccessMode) return;
   const ids = new Set();
   for (const lesson of model.lessons) for (const block of lesson.content || []) {
     if (block.mediaSource === 'upload' && block.mediaId) ids.add(block.mediaId);
@@ -417,27 +415,18 @@ function shellMarkup() {
   return `<div class="app-shell">
     <header class="app-header">
       <a class="brand" href="#" data-view="inicio" aria-label="Notarium, início"><span class="brand-image"><img src="icone.png" alt=""></span><span class="brand-copy"><strong>Notarium</strong><small>Estudo, prática e música em conjunto</small></span></a>
-      <nav class="primary-nav" aria-label="Navegação principal">
-        ${navItem('inicio', 'Visão geral', 'home')}
-        ${navItem('aulas', 'Aulas', 'lessons')}
-        ${navItem('exercicios', 'Exercícios', 'exercises')}
-        ${navItem('avaliacoes', 'Avaliações', 'results')}
-        ${navItem('trilha', 'Trilha', 'trail')}
-        ${navItem('grupo', 'Grupo', 'group')}
-        ${teacher ? navItem('alunos', 'Alunos', 'group') : ''}
-      </nav>
       <div class="header-actions">
-        <span class="local-pill"><i></i> Conta online</span>
+        <span class="local-pill"><i></i> ${localAccessMode ? 'Dados locais neste navegador' : 'Conta online'}</span>
         <button class="button theme-button settings-gear" type="button" data-action="settings" aria-label="Abrir configurações">${icons.settings}</button>
         <button class="button theme-button" type="button" data-action="theme" id="theme-toggle" aria-label="Alternar tema"></button>
-        <button class="profile-button" type="button" data-action="profile" aria-label="Perfil de ${esc(currentProfile().displayName || 'Músico')}">${profileAvatar(currentProfile())}<span class="profile-copy"><strong>${esc(currentProfile().displayName || 'Músico')}</strong><small>${teacher ? 'Professor' : 'Aluno'} · conta online</small></span><span class="chevron">⌄</span></button>
+        <button class="profile-button" type="button" data-action="profile" aria-label="Perfil de ${esc(currentProfile().displayName || 'Músico')}">${profileAvatar(currentProfile())}<span class="profile-copy"><strong>${esc(currentProfile().displayName || 'Músico')}</strong><small>${teacher ? 'Professor' : 'Aluno'} · conta local</small></span><span class="chevron">⌄</span></button>
       </div>
     </header>
     <main class="main-content">
-      <div class="breadcrumb"><span>Notarium</span><span aria-hidden="true">/</span><strong id="current-crumb"></strong><span class="local-note">Conta e conteúdo sincronizados pelo servidor</span></div>
+      <div class="breadcrumb"><span>Notarium</span><span aria-hidden="true">/</span><strong id="current-crumb"></strong><span class="local-note">${localAccessMode ? 'Conta e conteúdo salvos neste navegador' : 'Conta e conteúdo sincronizados pelo servidor'}</span></div>
       <div class="app-content" id="app-content"></div>
     </main>
-    <footer class="app-footer"><strong>RAVETTE</strong><span>Estudo, prática e música em conjunto</span><span class="footer-year">2026</span></footer>
+    <footer class="app-footer"><strong>Notarium</strong><span>Estudo, prática e música em conjunto</span><span class="footer-year">2026</span></footer>
     <div id="dialog-root"></div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <input id="import-file" type="file" accept=".js,.mjs,text/javascript" hidden>
@@ -1282,7 +1271,7 @@ function renderConfigurations() {
 
 function renderAccountLogin() {
   const setup = accountSetupNeeded;
-  return `<main class="account-login-page"><section class="account-login-card"><img class="account-login-logo" src="icone.png" alt=""><p class="eyebrow">NOTARIUM · PRIMEIRO ACESSO</p><h1>${setup ? 'Configure o professor' : 'Entre como professor'}</h1><p class="page-description">${setup ? 'Crie o primeiro acesso para começar a organizar aulas, exercícios e trilhas neste site.' : 'Informe o usuário e a senha configurados neste navegador.'}</p><form id="account-access-form" class="stack-form account-access-form">${setup ? `<label class="field-label">Nome do professor<input name="name" maxlength="60" required autocomplete="name" placeholder="Nome do professor"></label>` : ''}<label class="field-label">Nome de usuário<input name="username" minlength="3" maxlength="30" required autocomplete="username" placeholder="ex.: professor"></label><label class="field-label">Senha<input name="password" type="password" minlength="${setup ? '10' : '1'}" maxlength="256" required autocomplete="${setup ? 'new-password' : 'current-password'}"></label>${setup ? '<small class="form-help">Use de 3 a 30 caracteres no usuário e uma senha de pelo menos 10 caracteres.</small>' : ''}<p class="account-form-error" role="alert">${esc(accountError)}</p><button class="button primary" type="submit">${setup ? 'Criar acesso do professor' : 'Entrar'}</button></form><small class="privacy-note">Neste modo, o acesso e os dados ficam neste navegador e não dependem de servidor.</small></section></main>`;
+  return `<main class="account-login-page"><section class="account-login-card"><img class="account-login-logo" src="icone.png" alt=""><p class="eyebrow">NOTARIUM · ACESSO LOCAL</p><h1>${setup ? 'Configure o professor' : 'Entre no Notarium'}</h1><p class="page-description">${setup ? 'Crie o primeiro acesso para começar a organizar aulas, exercícios e trilhas neste site.' : 'Use o usuário de professor ou o usuário criado pelo professor.'}</p><form id="account-access-form" class="stack-form account-access-form">${setup ? `<label class="field-label">Nome do professor<input name="name" maxlength="60" required autocomplete="name" placeholder="Nome do professor"></label>` : ''}<label class="field-label">Nome de usuário<input name="username" minlength="3" maxlength="30" required autocomplete="username" placeholder="ex.: professor"></label><label class="field-label">Senha<input name="password" type="password" minlength="${setup ? '10' : '1'}" maxlength="256" required autocomplete="${setup ? 'new-password' : 'current-password'}"></label>${setup ? '<small class="form-help">Use de 3 a 30 caracteres no usuário e uma senha de pelo menos 10 caracteres.</small>' : ''}<p class="account-form-error" role="alert">${esc(accountError)}</p><button class="button primary" type="submit">${setup ? 'Criar acesso do professor' : 'Entrar'}</button></form><small class="privacy-note">Neste modo, o acesso e os dados ficam neste navegador e não dependem de servidor.</small></section></main>`;
 }
 
 function renderStudents() {
@@ -1363,6 +1352,14 @@ function showLoginLoading() {
 
 async function showAccountLogin() {
   accountError = '';
+  const configuredApiBase = document.querySelector('meta[name="notarium-api-base"]')?.content.trim();
+  if (!configuredApiBase) {
+    localAccessMode = true;
+    accountSetupNeeded = !loadLocalTeacher();
+    view = 'login';
+    render();
+    return;
+  }
   try {
     const setup = await accountRequest('/api/setup', {}, '');
     accountSetupNeeded = !setup.teacherExists;
@@ -1401,12 +1398,66 @@ function serializeLocalTeacher(teacher) {
 
 async function hashLocalPassword(password) {
   const bytes = new TextEncoder().encode(password);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  if (crypto?.subtle) {
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+  let hash = 2166136261;
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 16777619);
+  }
+  return `local-${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 function normalizeLocalUsername(username) {
   return String(username || '').trim().toLowerCase().replace(/\s+/g, '.');
+}
+
+const LOCAL_STUDENTS_KEY = 'notarium-local-students-v1';
+
+function loadLocalStudents() {
+  const value = localStorage.getItem(LOCAL_STUDENTS_KEY);
+  if (!value) return [];
+  try {
+    let expression = value.replace(/^\uFEFF/, '').trim();
+    if (expression.startsWith('export const notariumStudents')) {
+      expression = expression.slice(expression.indexOf('=', expression.indexOf('notariumStudents')) + 1).replace(/;+$/, '').trim();
+    }
+    const students = Function('"use strict"; return (' + expression + ');')();
+    return Array.isArray(students) ? students : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalStudents(students) {
+  const source = `export const notariumStudents = ${JSON.stringify(students, null, 2)};`;
+  localStorage.setItem(LOCAL_STUDENTS_KEY, source);
+}
+
+async function createLocalStudent(name, username, password) {
+  name = String(name || '').trim();
+  username = normalizeLocalUsername(username);
+  if (!name || !/^[a-z0-9._-]{3,30}$/i.test(username) || password.length < 10) {
+    throw new Error('Informe nome, usuário válido e senha com pelo menos 10 caracteres.');
+  }
+  const students = loadLocalStudents();
+  if (students.some(student => student.username === username)) {
+    throw new Error('Esse nome de usuário já está sendo usado.');
+  }
+  const student = {
+    id: createId(),
+    name,
+    username,
+    role: 'student',
+    passwordHash: await hashLocalPassword(password),
+    createdAt: new Date().toISOString(),
+    lastSeenAt: null
+  };
+  students.push(student);
+  saveLocalStudents(students);
+  return student;
 }
 
 async function startLocalSession(endpoint, payload) {
@@ -1434,13 +1485,21 @@ async function startLocalSession(endpoint, payload) {
     accountPortalUrl = location.href.split('#')[0];
   } else {
     const teacher = loadLocalTeacher();
-    if (!teacher) throw new Error('Nenhum professor foi criado neste navegador.');
     const passwordHash = await hashLocalPassword(password);
-    if (!teacher || teacher.username !== username || teacher.passwordHash !== passwordHash) {
+    if (teacher && teacher.username === username && teacher.passwordHash === passwordHash) {
+      saveAccountToken(`local-${createId()}`);
+      accountSession = { id: teacher.id, name: teacher.name, username: teacher.username, role: teacher.role };
+    } else {
+      const student = loadLocalStudents().find(item => item.username === username && item.passwordHash === passwordHash);
+      if (!student) throw new Error('Usuário ou senha incorretos.');
+      saveAccountToken(`local-${createId()}`);
+      accountSession = { id: student.id, name: student.name, username: student.username, role: student.role };
+      const nextStudents = loadLocalStudents().map(item => item.id === student.id ? { ...item, lastSeenAt: new Date().toISOString() } : item);
+      saveLocalStudents(nextStudents);
+    }
+    if (!accountSession) {
       throw new Error('Usuário ou senha incorretos.');
     }
-    saveAccountToken(`local-${createId()}`);
-    accountSession = { id: teacher.id, name: teacher.name, username: teacher.username, role: teacher.role };
     accountPortalUrl = location.href.split('#')[0];
   }
 
@@ -1449,7 +1508,7 @@ async function startLocalSession(endpoint, payload) {
   view = 'inicio';
   history.replaceState(null, '', location.pathname);
   render();
-  toast(`Acesso do professor iniciado para ${accountSession.name}.`, 'success');
+  toast(`Acesso iniciado para ${accountSession.name}.`, 'success');
 }
 
 async function startOnlineSession(endpoint, payload) {
@@ -1498,8 +1557,10 @@ async function logoutAccount() {
     return;
   }
   let serverLogoutFailed = false;
-  try { await accountRequest('/api/auth/logout', { method: 'POST', body: '{}' }); }
-  catch { serverLogoutFailed = true; }
+  if (!localAccessMode) {
+    try { await accountRequest('/api/auth/logout', { method: 'POST', body: '{}' }); }
+    catch { serverLogoutFailed = true; }
+  }
   saveAccountToken('');
   clearInterval(presenceTimer);
   presenceTimer = null;
@@ -1516,6 +1577,12 @@ async function logoutAccount() {
 }
 
 async function refreshStudents() {
+  if (localAccessMode) {
+    studentsCache = loadLocalStudents().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    studentsLoaded = true;
+    render();
+    return;
+  }
   try {
     const result = await accountRequest('/api/students');
     studentsCache = result.students;
@@ -2285,6 +2352,13 @@ function render() {
   charts.forEach(chart => chart.destroy());
   charts = [];
   document.documentElement.dataset.theme = model.profile.theme;
+  const staticTabs = document.querySelector('#notarium-tabs');
+  if (staticTabs) {
+    staticTabs.hidden = !accountSession || view === 'login' || view === 'loading';
+    staticTabs.querySelectorAll('[data-view]').forEach(button => {
+      button.classList.toggle('active', button.dataset.view === view);
+    });
+  }
   if (view === 'login') {
     root.innerHTML = renderAccountLogin();
     return;
@@ -2344,15 +2418,22 @@ function render() {
   if (view === 'grupo') renderGroupCharts(content);
   if (['alunos', 'trilha', 'grupo'].includes(view) && accountSession?.role === 'teacher' && !studentsLoaded && !studentsLoading) {
     studentsLoading = true;
-    accountRequest('/api/students').then(result => {
-      studentsCache = result.students;
+    if (localAccessMode) {
+      studentsCache = loadLocalStudents().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
       studentsLoaded = true;
-    }).catch(error => {
-      toast(`Não foi possível carregar os alunos: ${error.message}`, 'error');
-    }).finally(() => {
       studentsLoading = false;
       if (['alunos', 'trilha'].includes(view)) render();
-    });
+    } else {
+      accountRequest('/api/students').then(result => {
+        studentsCache = result.students;
+        studentsLoaded = true;
+      }).catch(error => {
+        toast(`Não foi possível carregar os alunos: ${error.message}`, 'error');
+      }).finally(() => {
+        studentsLoading = false;
+        if (['alunos', 'trilha'].includes(view)) render();
+      });
+    }
   }
 }
 
@@ -3535,11 +3616,18 @@ root.addEventListener('click', event => {
   } else if (action === 'remove-student') {
     const student = studentsCache.find(item => item.id === id);
     if (student && confirm(`Remover o acesso de ${student.name}? Esta pessoa não poderá entrar novamente e as respostas vinculadas à conta serão removidas.`)) {
-      accountRequest(`/api/students/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(() => {
+      if (localAccessMode) {
         studentsCache = studentsCache.filter(item => item.id !== id);
+        saveLocalStudents(studentsCache);
         render();
         toast('Acesso do aluno removido.');
-      }).catch(error => toast(error.message, 'error'));
+      } else {
+        accountRequest(`/api/students/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(() => {
+          studentsCache = studentsCache.filter(item => item.id !== id);
+          render();
+          toast('Acesso do aluno removido.');
+        }).catch(error => toast(error.message, 'error'));
+      }
     }
   } else if (action === 'copy-portal-link') {
     copyText(accountPortalUrl || `${location.origin}${location.pathname}?login=1`, 'Endereço do portal copiado.');
@@ -3930,30 +4018,57 @@ root.addEventListener('submit', event => {
     const name = String(data.get('name') || '').trim();
     const username = String(data.get('username') || '').trim();
     const password = String(data.get('password') || '');
-    accountRequest('/api/students', {
-      method: 'POST',
-      body: JSON.stringify({ name, username, password })
-    }).then(result => {
-      studentsCache = [...studentsCache, { ...result.student, lastSeenAt: null }]
+    if (localAccessMode) {
+      createLocalStudent(name, username, password).then(student => {
+        studentsCache = [...loadLocalStudents(), student]
         .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-      studentsLoaded = true;
-      lastCreatedStudentAccess = {
-        name: result.student.name,
-        username: result.student.username,
-        password,
-        portalUrl: result.portalUrl
-      };
-      render();
-      toast(`Acesso criado para ${result.student.name}. Compartilhe a senha em particular.`);
-    }).catch(error => {
-      const message = root.querySelector('[data-student-error]');
-      if (message) message.textContent = error.message;
-      else toast(error.message, 'error');
-    });
+        studentsLoaded = true;
+        lastCreatedStudentAccess = {
+          name: student.name,
+          username: student.username,
+          password,
+          portalUrl: `${location.origin}${location.pathname}?login=1`
+        };
+        render();
+        toast(`Acesso criado para ${student.name}. Compartilhe a senha em particular.`);
+      }).catch(error => {
+        const message = root.querySelector('[data-student-error]');
+        if (message) message.textContent = error.message;
+        else toast(error.message, 'error');
+      });
+    } else {
+      accountRequest('/api/students', {
+        method: 'POST',
+        body: JSON.stringify({ name, username, password })
+      }).then(result => {
+        studentsCache = [...studentsCache, { ...result.student, lastSeenAt: null }]
+          .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+        studentsLoaded = true;
+        lastCreatedStudentAccess = {
+          name: result.student.name,
+          username: result.student.username,
+          password,
+          portalUrl: result.portalUrl
+        };
+        render();
+        toast(`Acesso criado para ${result.student.name}. Compartilhe a senha em particular.`);
+      }).catch(error => {
+        const message = root.querySelector('[data-student-error]');
+        if (message) message.textContent = error.message;
+        else toast(error.message, 'error');
+      });
+    }
   }
 });
 
 window.addEventListener('notarium:error', event => toast(event.detail, 'error'));
+
+document.querySelector('#notarium-tabs')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-view]');
+  if (!button || !accountSession || view === 'login') return;
+  event.preventDefault();
+  navigate(button.dataset.view);
+});
 
 async function boot() {
   try {
@@ -3963,7 +4078,7 @@ async function boot() {
     accountError = '';
     await showAccountLogin();
   } catch (error) {
-    root.innerHTML = `<main class="boot-error"><img src="icone.png" alt=""><p class="eyebrow">NOTARIUM</p><h1>Não foi possível abrir seus dados</h1><p>${esc(error.message)}</p><p>Execute <strong>npm.cmd start</strong> ou abra o Notarium pelo servidor local.</p><button class="button secondary" type="button" id="retry">Tentar novamente</button></main>`;
+    root.innerHTML = `<main class="boot-error"><img src="icone.png" alt=""><p class="eyebrow">NOTARIUM</p><h1>Não foi possível abrir seus dados</h1><p>${esc(error.message)}</p><p>Recarregue o Notarium e tente novamente.</p><button class="button secondary" type="button" id="retry">Tentar novamente</button></main>`;
     root.querySelector('#retry').addEventListener('click', boot);
   }
 }
