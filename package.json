@@ -2,12 +2,6 @@
   "name": "harmonette-local",
   "private": true,
   "scripts": {
-    "start": "node notarium-server.js",
     "build": "node build-static.js"
-  },
-  "dependencies": {
-    "chart.js": "^4.6.1",
-    "jszip": "^3.10.2",
-    "opensheetmusicdisplay": "^2.2.1"
   }
 }
