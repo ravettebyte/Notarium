@@ -1,4 +1,4 @@
-import { createId, exportModel, importModel, loadModel, saveModel, validateModel } from './storage.js';
+import { createId, exportModel, importModel, loadModel, saveModel, setAccountStorageScope, validateModel } from './storage.js';
 import { bindPianos, formatNote, parseNote, parseNoteSpelling, parseNotes, pianoMarkup, playNotes } from './piano.js';
 import { extractRhythmEvents, readMusicXmlFile, readMusicXmlUrl, renderMusicXml } from './musicxml.js';
 import { getMediaFile, getMediaUrl, mediaAsDataUrl, restoreMediaDataUrl, saveMediaFile } from './media-store.js';
@@ -12,7 +12,7 @@ document.documentElement.lang = 'pt-BR';
 document.title = 'Notarium — Aprenda música no seu ritmo';
 
 let model;
-let view = 'inicio';
+let view = 'login';
 let selectedBlockId = null;
 let selectedExerciseBlockId = null;
 let activeExerciseId = null;
@@ -34,6 +34,7 @@ let accountSession = null;
 let accountToken = sessionStorage.getItem('notarium-session') || '';
 let accountPortalUrl = '';
 let accountError = '';
+let backupStatus = null;
 let accountSetupNeeded = false;
 let studentsCache = [];
 let studentsLoaded = false;
@@ -202,7 +203,7 @@ function currentProfile() {
 async function accountRequest(path, options = {}, token = accountToken) {
   const headers = new Headers(options.headers || {});
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (token && token !== 'cookie') headers.set('Authorization', `Bearer ${token}`);
   let response;
   try {
     response = await fetch(apiUrl(path), { ...options, headers });
@@ -230,25 +231,35 @@ function onlineUserModel(source, user) {
   return result;
 }
 
-function queueRemoteModelSave() {
-  if (accountSession?.role !== 'teacher') return;
+let remoteSaveQueue = Promise.resolve();
+let pendingModelSave = null;
+function flushRemoteModelSave() {
   clearTimeout(remoteSaveTimer);
-  remoteSaveTimer = setTimeout(async () => {
-    try {
-      await accountRequest('/api/model', {
-        method: 'PUT',
-        body: JSON.stringify({ model })
-      });
-      toast('Conteúdo sincronizado com o servidor.');
-    } catch (error) {
-      toast(`As alterações locais foram salvas, mas não sincronizadas: ${error.message}`, 'error');
-    }
-  }, 350);
+  if (!pendingModelSave) return remoteSaveQueue;
+  const pending = pendingModelSave;
+  pendingModelSave = null;
+  remoteSaveQueue = remoteSaveQueue.catch(() => {}).then(async () => {
+    await accountRequest(pending.path, { method: 'PUT', body: pending.body });
+  });
+  return remoteSaveQueue;
+}
+
+function queueRemoteModelSave() {
+  if (!accountSession) return;
+  pendingModelSave = {
+    path: accountSession.role === 'teacher' ? '/api/model' : '/api/preferences',
+    body: JSON.stringify(accountSession.role === 'teacher' ? { model } : { theme: model.profile.theme, defaultOctave: model.profile.defaultOctave, trails: model.trails })
+  };
+  clearTimeout(remoteSaveTimer);
+  remoteSaveTimer = setTimeout(() => flushRemoteModelSave().then(() => {
+    toast('Alterações salvas online.');
+  }).catch(error => toast(`Falha no salvamento online: ${error.message}`, 'error')), 350);
 }
 
 async function syncOnlineMedia(mediaId) {
   if (accountSession?.role !== 'teacher') return;
   const file = await getMediaFile(mediaId);
+  if (file.size > 3 * 1024 * 1024) throw new Error('Cada arquivo enviado online deve ter até 3 MB. Para arquivos maiores, use um link.');
   const dataUrl = await mediaAsDataUrl(mediaId);
   await accountRequest('/api/media', {
     method: 'POST',
@@ -307,7 +318,7 @@ function persist(message = 'Alterações salvas neste navegador.') {
     queueRemoteModelSave();
     render();
     if (message) toast(accountSession?.role === 'teacher'
-      ? 'Alterações salvas localmente; sincronização com o servidor em andamento.'
+      ? 'Salvando alterações online…'
       : message);
   } catch (error) {
     toast(error.message, 'error');
@@ -1282,7 +1293,7 @@ function renderSettings() {
     const roleControl = accountSession
       ? `<div class="profile-public-note">Função da conta: ${profile.role === 'teacher' ? 'Professor' : 'Aluno'}. Ela é definida pelo acesso online e não pode ser alterada pelo perfil.</div>`
       : `<label class="field-label">Visualizar como<select name="role"><option value="teacher" ${profile.role === 'teacher' ? 'selected' : ''}>Professor — criar e organizar conteúdo</option><option value="student" ${profile.role === 'student' ? 'selected' : ''}>Aluno — ver conteúdo publicado e praticar</option></select></label>`;
-    section = `<div class="profile-content-grid"><section class="profile-panel"><div class="section-heading"><div><p class="eyebrow">INFORMAÇÕES PESSOAIS</p><h2>Editar perfil</h2></div></div><form id="profile-form" class="stack-form profile-edit-form"><label class="field-label">Foto ou avatar<input name="avatarFile" type="file" accept="image/png,image/jpeg,image/webp"><small class="form-help">PNG, JPEG ou WebP; até 5 MB. ${accountSession ? 'O arquivo permanece neste navegador.' : 'A imagem é reduzida antes de ser guardada.'}</small></label><div class="profile-avatar-preview">${profileAvatar(profile)}<div><strong>Prévia do avatar</strong><small>Escolha uma imagem ou mantenha as iniciais.</small></div>${profile.avatarDataUrl ? button('Remover foto', 'clear-avatar', 'secondary', 'data-form-input="avatarFile"') : ''}</div><label class="field-label">Nome de exibição<input name="displayName" maxlength="60" required value="${esc(profile.displayName)}"></label><label class="field-label">Nome de usuário${accountSession ? '' : ' local'}<input name="username" maxlength="30" ${accountSession ? 'minlength="3" required' : ''} value="${esc(profile.username)}" placeholder="ex.: nome.usuario"><small class="form-help">Sem espaços; o @ é exibido automaticamente. ${accountSession ? 'Este é o usuário usado para entrar.' : 'Válido neste navegador.'}</small></label><label class="field-label">Biografia<textarea name="bio" maxlength="500" rows="3" placeholder="Conte sobre seus estudos musicais">${esc(profile.bio || '')}</textarea></label><div class="profile-public-note">Seu perfil é público para manter a colaboração e a visualização das trilhas.</div>${roleControl}<small class="profile-form-error" data-profile-error role="status"></small><button class="button primary" type="submit">Salvar alterações do perfil</button></form><small class="privacy-note">${accountSession ? 'Nome e usuário são atualizados na conta do servidor. Avatar e biografia permanecem neste navegador.' : 'O perfil e os dados permanecem neste navegador; não há contas autenticadas nem sincronização em nuvem.'}</small></section><div class="profile-side-column"><section class="profile-panel"><p class="eyebrow">ATIVIDADE MUSICAL</p><h2>Suas atividades</h2>${activity}</section><section class="profile-panel"><p class="eyebrow">PUBLICAÇÕES</p><h2>Nenhuma publicação</h2><p class="profile-empty-copy">A aplicação local ainda não tem um mural de publicações.</p></section></div></div>`;
+    section = `<div class="profile-content-grid"><section class="profile-panel"><div class="section-heading"><div><p class="eyebrow">INFORMAÇÕES PESSOAIS</p><h2>Editar perfil</h2></div></div><form id="profile-form" class="stack-form profile-edit-form"><label class="field-label">Foto ou avatar<input name="avatarFile" type="file" accept="image/png,image/jpeg,image/webp"><small class="form-help">PNG, JPEG ou WebP; até 5 MB. ${accountSession ? 'O arquivo permanece neste navegador.' : 'A imagem é reduzida antes de ser guardada.'}</small></label><div class="profile-avatar-preview">${profileAvatar(profile)}<div><strong>Prévia do avatar</strong><small>Escolha uma imagem ou mantenha as iniciais.</small></div>${profile.avatarDataUrl ? button('Remover foto', 'clear-avatar', 'secondary', 'data-form-input="avatarFile"') : ''}</div><label class="field-label">Nome de exibição<input name="displayName" maxlength="60" required value="${esc(profile.displayName)}"></label><label class="field-label">Nome de usuário${accountSession ? '' : ' local'}<input name="username" maxlength="30" ${accountSession ? 'minlength="3" required' : ''} value="${esc(profile.username)}" placeholder="ex.: nome.usuario"><small class="form-help">Sem espaços; o @ é exibido automaticamente. ${accountSession ? 'Este é o usuário usado para entrar.' : 'Válido neste navegador.'}</small></label><label class="field-label">Biografia<textarea name="bio" maxlength="500" rows="3" placeholder="Conte sobre seus estudos musicais">${esc(profile.bio || '')}</textarea></label><div class="profile-public-note">Seu perfil é público para manter a colaboração e a visualização das trilhas.</div>${roleControl}<small class="profile-form-error" data-profile-error role="status"></small><button class="button primary" type="submit">Salvar alterações do perfil</button></form><small class="privacy-note">${accountSession ? 'Nome e usuário são atualizados na conta do servidor. Avatar e biografia também são salvos na sua conta.' : 'O perfil e os dados permanecem neste navegador; não há contas autenticadas nem sincronização em nuvem.'}</small></section><div class="profile-side-column"><section class="profile-panel"><p class="eyebrow">ATIVIDADE MUSICAL</p><h2>Suas atividades</h2>${activity}</section><section class="profile-panel"><p class="eyebrow">PUBLICAÇÕES</p><h2>Nenhuma publicação</h2><p class="profile-empty-copy">A aplicação local ainda não tem um mural de publicações.</p></section></div></div>`;
   } else {
     section = '';
   }
@@ -1303,12 +1314,12 @@ function renderConfigurations() {
       <label class="field-label">Nota do clique<select id="click-sound-note">${clickNotes}</select></label>
       <label class="field-label">Volume do clique <output id="click-volume-output">${Number(localStorage.getItem('notarium-click-volume') || 300)}%</output><input id="click-sound-volume" type="range" min="80" max="300" step="10" value="${Number(localStorage.getItem('notarium-click-volume') || 300)}"></label>
       <p class="form-help">O som de notificações permanece fixo e independente do som de clique.</p></section>
-      <section class="settings-card"><p class="eyebrow">SALVAMENTO AUTOMÁTICO</p><h2>${accountSession ? 'Conta online' : 'Modo local'}</h2><p>${accountSession ? 'Conteúdo e respostas são sincronizados automaticamente com o servidor.' : 'Seus dados são guardados automaticamente neste navegador. Para sincronização entre dispositivos, entre em uma conta online.'}</p><small class="privacy-note">Não há opções de cópia de segurança nesta tela.</small></section></div>`;
+      <section class="settings-card"><p class="eyebrow">SALVAMENTO AUTOMÁTICO</p><h2>${accountSession ? 'Conta online' : 'Modo local'}</h2><p>${accountSession ? 'Conteúdo e respostas são sincronizados automaticamente com o servidor.' : 'Seus dados são guardados automaticamente neste navegador. Para sincronização entre dispositivos, entre em uma conta online.'}</p>${accountSession?.role === 'teacher' ? `<small class="privacy-note">${backupStatus?.configured ? esc(backupStatus.last?.message || 'Backup criptografado no GitHub agendado a cada hora.') : 'Backup no GitHub aguardando configuração protegida na hospedagem. O salvamento online continua no banco do site.'}</small>` : ''}</section></div>`;
 }
 
 function renderAccountLogin() {
   const setup = accountSetupNeeded;
-  return `<main class="account-login-page"><section class="account-login-card"><img class="account-login-logo" src="icone.png" alt=""><p class="eyebrow">NOTARIUM · ACESSO ONLINE</p><h1>${setup ? 'Configure sua conta de professor' : 'Entre na sua conta'}</h1><p class="page-description">${setup ? 'Crie a primeira conta para administrar a turma e cadastrar acessos individuais para seus alunos.' : 'Use o usuário e a senha que o professor criou para você.'}</p><form id="account-access-form" class="stack-form account-access-form">${setup ? `<label class="field-label">Nome de exibição<input name="name" maxlength="60" required autocomplete="name" placeholder="Como você será identificado"></label>` : ''}<label class="field-label">Nome de usuário<input name="username" minlength="3" maxlength="30" required autocomplete="username" placeholder="ex.: ana.silva"></label><label class="field-label">Senha<input name="password" type="password" minlength="${setup ? '10' : '1'}" maxlength="256" required autocomplete="${setup ? 'new-password' : 'current-password'}"></label>${setup ? '<small class="form-help">Use de 3 a 30 caracteres no usuário e uma senha de pelo menos 10 caracteres.</small>' : ''}<p class="account-form-error" role="alert">${esc(accountError)}</p><button class="button primary" type="submit">${setup ? 'Criar conta de professor' : 'Entrar'}</button></form><button class="button secondary" type="button" data-action="exit-account-login">Continuar no modo local</button><small class="privacy-note">As contas são armazenadas no servidor do Notarium. Use uma hospedagem com HTTPS e armazenamento persistente antes de compartilhar publicamente.</small></section></main>`;
+  return `<main class="account-login-page"><section class="account-login-card"><img class="account-login-logo" src="icone.png" alt=""><p class="eyebrow">NOTARIUM · ACESSO ONLINE</p><h1>${setup ? 'Configure sua conta de professor' : 'Entre na sua conta'}</h1><p class="page-description">${setup ? 'Crie a primeira conta para administrar a turma e cadastrar acessos individuais para seus alunos.' : 'Use o usuário e a senha que o professor criou para você.'}</p><form id="account-access-form" class="stack-form account-access-form">${setup ? `<label class="field-label">Nome de exibição<input name="name" maxlength="60" required autocomplete="name" placeholder="Como você será identificado"></label>` : ''}<label class="field-label">Nome de usuário<input name="username" minlength="3" maxlength="30" required autocomplete="username" placeholder="ex.: ana.silva"></label><label class="field-label">Senha<input name="password" type="password" minlength="${setup ? '10' : '1'}" maxlength="256" required autocomplete="${setup ? 'new-password' : 'current-password'}"></label>${setup ? '<small class="form-help">Use de 3 a 30 caracteres no usuário e uma senha de pelo menos 10 caracteres.</small>' : ''}<p class="account-form-error" role="alert">${esc(accountError)}</p><button class="button primary" type="submit">${setup ? 'Criar conta de professor' : 'Entrar'}</button></form><small class="privacy-note">Entre com seu @usuário e senha. Seu perfil e suas atividades são salvos automaticamente online.</small></section></main>`;
 }
 
 function renderStudents() {
@@ -1326,7 +1337,7 @@ function renderStudents() {
   const students = studentsCache.length
     ? `<div class="student-account-list">${studentsCache.map(student => `<article class="student-account-card"><span class="student-avatar">${esc((student.name || 'A').slice(0, 1).toUpperCase())}</span><div class="student-account-copy"><strong>${esc(student.name)}</strong><small>@${esc(student.username)} · ${studentPresenceLabel(student.lastSeenAt, student.online)}</small><small>Conta criada em ${new Date(student.createdAt).toLocaleDateString('pt-BR')}</small></div><button type="button" class="button danger small-button" data-action="remove-student" data-id="${esc(student.id)}">Remover</button></article>`).join('')}</div>`
     : '<div class="student-list-empty"><strong>Nenhum aluno cadastrado ainda.</strong><p>Crie o primeiro acesso pelo formulário ao lado.</p></div>';
-  return `${heading}<section class="account-portal-card"><div><p class="eyebrow">PORTAL DOS ALUNOS</p><h2>Compartilhe o endereço do Notarium</h2><p>Os alunos entram com o nome de usuário e a senha que você criar abaixo.</p><code>${esc(portal)}</code></div><button type="button" class="button secondary" data-action="copy-portal-link">Copiar endereço</button></section>${created}<div class="student-management-grid"><section class="profile-panel"><p class="eyebrow">NOVO ACESSO</p><h2>Criar aluno</h2><p>O nome é exibido no perfil. O nome de usuário é separado e será usado para entrar.</p><form id="student-create-form" class="stack-form"><label class="field-label">Nome de exibição<input name="name" maxlength="60" required autocomplete="name" placeholder="Nome do aluno"></label><label class="field-label">Nome de usuário<input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9._-]{3,30}" required autocomplete="off" placeholder="ex.: maria.silva"><small class="form-help">De 3 a 30 caracteres; use letras, números, ponto, traço ou sublinhado.</small></label><label class="field-label">Senha inicial<input name="password" type="password" minlength="10" maxlength="256" required autocomplete="new-password"><small class="form-help">No mínimo 10 caracteres. Ela será mostrada uma vez para você compartilhar.</small></label><p class="account-form-error" data-student-error role="alert"></p><button class="button primary" type="submit">Criar acesso</button></form></section><section class="profile-panel"><div class="student-list-heading"><div><p class="eyebrow">CONTAS DA TURMA</p><h2>Alunos cadastrados <span class="count-pill">${studentsCache.length}</span></h2></div><button type="button" class="button secondary small-button" data-action="refresh-students">Atualizar</button></div>${students}</section></div><div class="settings-actions">${button('Sair / trocar de conta', 'logout', 'secondary')}</div>`;
+  return `${heading}<section class="account-portal-card"><div><p class="eyebrow">PORTAL DOS ALUNOS</p><h2>Compartilhe o endereço do Notarium</h2><p>Os alunos entram com o nome de usuário e a senha que você criar abaixo.</p><code>${esc(portal)}</code></div><button type="button" class="button secondary" data-action="copy-portal-link">Copiar endereço</button></section>${created}<div class="student-management-grid"><section class="profile-panel"><p class="eyebrow">NOVO ACESSO</p><h2>Criar aluno</h2><p>O nome é exibido no perfil. O nome de usuário é separado e será usado para entrar.</p><form id="student-create-form" class="stack-form"><label class="field-label">Nome de exibição<input name="name" maxlength="60" required autocomplete="name" placeholder="Nome do aluno"></label><label class="field-label">Nome de usuário<input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9._-]{3,30}" required autocomplete="off" placeholder="ex.: maria.silva"><small class="form-help">De 3 a 30 caracteres; use letras, números, ponto, traço ou sublinhado.</small></label><label class="field-label">Senha inicial<input name="password" type="password" minlength="6" maxlength="256" required autocomplete="new-password"><small class="form-help">No mínimo 6 caracteres. Ela será mostrada uma vez para você compartilhar.</small></label><p class="account-form-error" data-student-error role="alert"></p><button class="button primary" type="submit">Criar acesso</button></form></section><section class="profile-panel"><div class="student-list-heading"><div><p class="eyebrow">CONTAS DA TURMA</p><h2>Alunos cadastrados <span class="count-pill">${studentsCache.length}</span></h2></div><button type="button" class="button secondary small-button" data-action="refresh-students">Atualizar</button></div>${students}</section></div><div class="settings-actions">${button('Sair / trocar de conta', 'logout', 'secondary')}</div>`;
 }
 
 function openQuickSettings() {
@@ -1401,7 +1412,6 @@ async function showAccountLogin() {
 }
 
 async function startOnlineSession(endpoint, payload) {
-  const localModel = JSON.parse(JSON.stringify(model));
   const response = await accountRequest(endpoint, {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -1414,23 +1424,19 @@ async function startOnlineSession(endpoint, payload) {
   notificationsLoaded = false;
   startPresenceHeartbeat();
   studentsLoaded = false;
-  const remoteHasContent = response.model.blocks.length + response.model.lessons.length + response.model.exercises.length > 0;
-  const localHasContent = localModel.blocks.length + localModel.lessons.length + localModel.exercises.length > 0;
   const syncWarnings = [];
-  if (response.user.role === 'teacher' && !remoteHasContent && localHasContent) {
-    model = onlineUserModel(localModel, response.user);
-    try { await accountRequest('/api/model', { method: 'PUT', body: JSON.stringify({ model }) }); }
-    catch (error) { syncWarnings.push(`O conteúdo local não foi enviado: ${error.message}`); }
-  } else {
-    model = onlineUserModel(response.model, response.user);
-  }
+  setAccountStorageScope(response.user.id);
+  model = onlineUserModel(response.model, response.user);
   model = saveModel(model);
   if (response.user.role === 'teacher') {
     try { await syncReferencedMedia(); }
     catch (error) { syncWarnings.push(`Alguns materiais não foram sincronizados: ${error.message}`); }
   }
-  await showLoginLoading();
-  view = 'inicio';
+  if (accountSession.role === 'teacher') {
+    try { backupStatus = await accountRequest('/api/backup/status'); } catch { backupStatus = null; }
+  }
+  view = 'perfil';
+  profileTab = 'profile';
   history.replaceState(null, '', location.pathname);
   render();
   toast(syncWarnings.length
@@ -1443,9 +1449,10 @@ async function logoutAccount() {
     await showAccountLogin();
     return;
   }
-  let serverLogoutFailed = false;
+  try { await flushRemoteModelSave(); }
+  catch { toast('Não foi possível salvar as últimas alterações. Tente sair novamente.', 'error'); return; }
   try { await accountRequest('/api/auth/logout', { method: 'POST', body: '{}' }); }
-  catch { serverLogoutFailed = true; }
+  catch { toast('Não foi possível encerrar a sessão no servidor. Tente novamente.', 'error'); return; }
   saveAccountToken('');
   clearInterval(presenceTimer);
   presenceTimer = null;
@@ -1456,12 +1463,11 @@ async function logoutAccount() {
   studentsCache = [];
   studentsLoaded = false;
   lastCreatedStudentAccess = null;
-  model.profile.role = 'teacher';
-  view = 'inicio';
-  render();
-  toast(serverLogoutFailed
-    ? 'Sessão encerrada neste navegador. O servidor não respondeu; a sessão será descartada quando ele reiniciar.'
-    : 'Sessão encerrada. O modo local continua disponível.');
+  clearTimeout(remoteSaveTimer);
+  pendingModelSave = null;
+  setAccountStorageScope(null);
+  model = await loadModel();
+  await showAccountLogin();
 }
 
 async function refreshStudents() {
@@ -1727,7 +1733,7 @@ function getTrailSettings(studentId) {
 }
 
 function getTrailMember(studentId) {
-  return demoMembers.find(member => member.id === studentId)
+  return (!accountSession && demoMembers.find(member => member.id === studentId))
     || studentsCache.find(student => student.id === studentId)
     || (accountSession?.id === studentId ? { ...accountSession, initials: accountSession.name?.slice(0, 2).toUpperCase() } : null);
 }
@@ -2054,7 +2060,7 @@ function trailStaffMarkup(steps, settings) {
 function renderTrail() {
   const member = currentProfile().role === 'student' && accountSession
     ? getTrailMember(accountSession.id)
-    : getTrailMember(selectedTrailStudentId) || demoMembers[0];
+    : getTrailMember(selectedTrailStudentId) || (accountSession ? studentsCache[0] : demoMembers[0]);
   if (!member) return empty('Sua trilha ainda está sendo preparada.', 'Volte em alguns instantes para conferir as etapas adicionadas pelo professor.', '', '𝄞');
   selectedTrailStudentId = member.id;
   const teacher = currentProfile().role === 'teacher';
@@ -2065,7 +2071,7 @@ function renderTrail() {
   const progress = steps.length ? Math.round(doneCount / steps.length * 100) : 0;
   const trailMembers = currentProfile().role === 'student' && accountSession
     ? [member]
-    : [...demoMembers, ...studentsCache.filter(item => !demoMembers.some(demo => demo.id === item.id))];
+    : (accountSession ? studentsCache : demoMembers);
   const studentOptions = trailMembers.map(item => `<option value="${esc(item.id)}" ${item.id === member.id ? 'selected' : ''}>${esc(item.name)}${demoMembers.some(demo => demo.id === item.id) ? ' · DEMO' : ''}</option>`).join('');
   const actions = teacher
     ? `${button('♫ Configurar partitura', 'configure-trail')}${model.blocks.length ? button('＋ Adicionar etapa', 'new-trail-step', 'primary', `data-student-id="${esc(member.id)}"`) : ''}`
@@ -2081,7 +2087,7 @@ function renderTrail() {
     ? rhythmRestMarkup(rhythm, 18, rhythm === 'whole' ? 34 : rhythm === 'half' ? 24 : 30)
     : rhythmNoteMarkup(rhythm, 18, 30)}</g></svg>`;
   const notationLegend = `<div class="trail-score-legend" aria-label="Legenda de figuras e pausas"><div class="trail-score-legend-group"><strong>Figuras</strong>${rhythmicValues.map(([rhythm, label]) => `<span>${legendGlyph(rhythm)}${label}</span>`).join('')}</div><div class="trail-score-legend-group"><strong>Pausas</strong>${rhythmicValues.map(([rhythm, label]) => `<span>${legendGlyph(rhythm, true)}Pausa de ${label.toLocaleLowerCase('pt-BR')}</span>`).join('')}</div></div>`;
-  return `${pageHeading('PERCURSO MUSICAL', 'Trilha', teacher ? 'Monte uma sequência personalizada de aulas para cada aluno.' : 'Acompanhe as etapas musicais preparadas para você.', actions)}<section class="trail-student-panel"><div class="trail-student-summary">${profileAvatar(member, true)}<div><span class="eyebrow">${teacher ? 'TRILHA DO ALUNO · DEMONSTRAÇÃO' : 'ALUNO DE DEMONSTRAÇÃO'}</span><h2>${esc(member.name)}</h2><p>@${esc(member.username)} · Todos os perfis são públicos</p></div></div><label class="field-label">${teacher ? 'Escolher aluno para organizar a trilha' : 'Visualizar trilha de demonstração'}<select id="trail-student-select">${studentOptions}</select></label><div class="trail-progress"><div><span>Progresso da trilha</span><strong>${doneCount}/${steps.length} etapas · ${progress}%</strong></div><div class="trail-progress-track" role="progressbar" aria-label="Progresso da trilha de ${esc(member.name)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></div></div></section><section class="trail-score-panel"><div class="trail-score-heading"><div><p class="eyebrow">PARTITURA DA TRILHA</p><h2>${esc(settings.title || 'Sinfonia do Luar')}</h2><p class="trail-score-subtitle">${esc(key.label)} · ${esc(settings.timeSignature)} · ${esc({treble:'clave de sol',alto:'clave de dó',bass:'clave de fá'}[settings.clef] || 'clave de sol')}</p></div><span>♪ ${steps.length} ${steps.length === 1 ? 'etapa' : 'etapas'}</span></div>${trailStaffMarkup(steps, settings)}${notationLegend}<p class="trail-score-hint">Os blocos sob as notas abrem os detalhes da etapa. Colcheias e semicolcheias são agrupadas por tempo, respeitando a fórmula de compasso. As ligaduras aparecem ocasionalmente na melodia; notas longas que cruzam o compasso são divididas e ligadas.</p></section>${!steps.length ? `<section class="trail-empty"><span aria-hidden="true">𝄞</span><h2>${teacher ? 'Esta trilha ainda está vazia.' : 'Sua trilha está esperando por você.'}</h2><p>${teacher ? `Adicione etapas e escolha os blocos de aula que ${esc(member.name)} deve seguir.` : 'Seu professor ainda não adicionou etapas a esta trilha.'}</p>${teacher && !model.blocks.length ? button('＋ Criar primeiro bloco de aula', 'new-block', 'primary') : ''}</section>` : ''}<p class="profile-demo-note">As trilhas e os cinco alunos são demonstrações locais. Etapas e conclusões ficam salvas apenas neste navegador.</p>`;
+  return `${pageHeading('PERCURSO MUSICAL', 'Trilha', teacher ? 'Monte uma sequência personalizada de aulas para cada aluno.' : 'Acompanhe as etapas musicais preparadas para você.', actions)}<section class="trail-student-panel"><div class="trail-student-summary">${profileAvatar(member, true)}<div><span class="eyebrow">${teacher ? 'TRILHA DO ALUNO' : 'SUA TRILHA'}</span><h2>${esc(member.name)}</h2><p>@${esc(member.username)} · Todos os perfis são públicos</p></div></div><label class="field-label">${teacher ? 'Escolher aluno para organizar a trilha' : 'Sua trilha individual'}<select id="trail-student-select">${studentOptions}</select></label><div class="trail-progress"><div><span>Progresso da trilha</span><strong>${doneCount}/${steps.length} etapas · ${progress}%</strong></div><div class="trail-progress-track" role="progressbar" aria-label="Progresso da trilha de ${esc(member.name)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></div></div></section><section class="trail-score-panel"><div class="trail-score-heading"><div><p class="eyebrow">PARTITURA DA TRILHA</p><h2>${esc(settings.title || 'Sinfonia do Luar')}</h2><p class="trail-score-subtitle">${esc(key.label)} · ${esc(settings.timeSignature)} · ${esc({treble:'clave de sol',alto:'clave de dó',bass:'clave de fá'}[settings.clef] || 'clave de sol')}</p></div><span>♪ ${steps.length} ${steps.length === 1 ? 'etapa' : 'etapas'}</span></div>${trailStaffMarkup(steps, settings)}${notationLegend}<p class="trail-score-hint">Os blocos sob as notas abrem os detalhes da etapa. Colcheias e semicolcheias são agrupadas por tempo, respeitando a fórmula de compasso. As ligaduras aparecem ocasionalmente na melodia; notas longas que cruzam o compasso são divididas e ligadas.</p></section>${!steps.length ? `<section class="trail-empty"><span aria-hidden="true">𝄞</span><h2>${teacher ? 'Esta trilha ainda está vazia.' : 'Sua trilha está esperando por você.'}</h2><p>${teacher ? `Adicione etapas e escolha os blocos de aula que ${esc(member.name)} deve seguir.` : 'Seu professor ainda não adicionou etapas a esta trilha.'}</p>${teacher && !model.blocks.length ? button('＋ Criar primeiro bloco de aula', 'new-block', 'primary') : ''}</section>` : ''}<p class="profile-demo-note">As etapas e o progresso são salvos automaticamente na conta do aluno.</p>`;
 }
 
 function openTrailStepDetails(id) {
@@ -2301,6 +2307,7 @@ function applyProfileMemberFilters() {
 }
 
 function render() {
+  if (!accountSession) view = 'login';
   if (!model) return;
   charts.forEach(chart => chart.destroy());
   charts = [];
@@ -3461,7 +3468,7 @@ async function saveProfile(form) {
     try {
       const updated = await accountRequest('/api/account/profile', {
         method: 'PUT',
-        body: JSON.stringify({ name: displayName, username })
+        body: JSON.stringify({ name: displayName, username, bio: String(data.get('bio') || '').trim(), avatarDataUrl, defaultOctave: Number(data.get('defaultOctave')), theme: currentProfile().theme })
       });
       accountSession = updated.user;
     } catch (error) {
@@ -3547,10 +3554,7 @@ root.addEventListener('click', event => {
   } else if (action === 'account-login') {
     showAccountLogin();
   } else if (action === 'exit-account-login') {
-    accountError = '';
-    view = 'inicio';
-    history.replaceState(null, '', location.pathname);
-    render();
+    showAccountLogin();
   } else if (action === 'open-students') {
     dialog?.close();
     navigate('alunos');
@@ -3616,7 +3620,7 @@ root.addEventListener('click', event => {
       render();
     }
   } else if (action === 'open-student-trail') {
-    if (demoMembers.some(member => member.id === actionButton.dataset.studentId)) {
+    if (getTrailMember(actionButton.dataset.studentId)) {
       selectedTrailStudentId = actionButton.dataset.studentId;
       navigate('trilha');
     }
@@ -3819,7 +3823,10 @@ root.addEventListener('click', event => {
 });
 
 root.addEventListener('change', event => {
-  if (event.target.id === 'click-sounds-toggle') {
+  if (event.target.id === 'default-octave-preference') {
+    model.profile.defaultOctave = Number(event.target.value);
+    persist('Oitava padrão atualizada.');
+  } else if (event.target.id === 'click-sounds-toggle') {
     localStorage.setItem('notarium-click-sounds', event.target.checked ? 'on' : 'off');
     toast(event.target.checked ? 'Som de clique ativado.' : 'Som de clique desligado.');
   } else if (event.target.id === 'click-sound-note') {
@@ -3846,7 +3853,7 @@ root.addEventListener('change', event => {
       preview.replaceChildren(image);
     }
   } else if (event.target.id === 'trail-student-select') {
-    if (demoMembers.some(member => member.id === event.target.value)) {
+    if (getTrailMember(event.target.value)) {
       selectedTrailStudentId = event.target.value;
       render();
     }
@@ -3993,11 +4000,17 @@ window.addEventListener('notarium:error', event => toast(event.detail, 'error'))
 async function boot() {
   try {
     model = await loadModel();
-    if (accountToken) {
+    {
       try {
         const session = await accountRequest('/api/session');
         if (session.authenticated) {
           accountSession = session.user;
+          saveAccountToken('cookie');
+          setAccountStorageScope(session.user.id);
+          view = 'perfil';
+          if (accountSession.role === 'teacher') {
+            try { backupStatus = await accountRequest('/api/backup/status'); } catch { backupStatus = null; }
+          }
           startPresenceHeartbeat();
           notificationsLoaded = false;
           accountPortalUrl = `${location.origin}${location.pathname}?login=1`;
@@ -4013,12 +4026,12 @@ async function boot() {
         accountError = error.message;
       }
     }
-    if (new URLSearchParams(location.search).has('login') && !accountSession) {
+    if (!accountSession) {
       await showAccountLogin();
       return;
     }
     render();
-    if (accountError) toast(`Modo local ativado: ${accountError}`, 'error');
+    if (accountError) toast(accountError, 'error');
   } catch (error) {
     root.innerHTML = `<main class="boot-error"><img src="icone.png" alt=""><p class="eyebrow">NOTARIUM</p><h1>Não foi possível abrir seus dados</h1><p>${esc(error.message)}</p><p>Execute <strong>npm.cmd start</strong> ou abra o Notarium pelo servidor local.</p><button class="button secondary" type="button" id="retry">Tentar novamente</button></main>`;
     root.querySelector('#retry').addEventListener('click', boot);
