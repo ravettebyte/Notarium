@@ -2,6 +2,10 @@
   "name": "harmonette-local",
   "private": true,
   "scripts": {
-    "build": "node build-static.js"
+    "build": "node build-static.js",
+    "deploy:netlify": "npx netlify-cli deploy --build --prod"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
   }
 }
