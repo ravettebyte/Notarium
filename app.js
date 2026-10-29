@@ -1,3 +1,4 @@
+import { handleAuthCallback, hydrateSession, updateUser, acceptInvite, logout as clientLogout, getUser as identityUser } from '@netlify/identity';
 import { createId, exportModel, importModel, loadModel, saveModel, serializeModel, validateModel } from './storage.js';
 import { bindPianos, formatNote, parseNote, parseNoteSpelling, parseNotes, pianoMarkup, playNotes } from './piano.js';
 import { extractRhythmEvents, readMusicXmlFile, readMusicXmlUrl, renderMusicXml } from './musicxml.js';
@@ -27,11 +28,15 @@ let resultsExerciseId = null;
 let charts = [];
 let profileTab = 'profile';
 let selectedProfileId = null;
-let selectedTrailStudentId = 'demo-ana';
+let selectedTrailStudentId = null;
 let collaboratorFilter = 'all';
 let collaboratorSort = 'name';
 let accountSession = null;
-let accountToken = sessionStorage.getItem('notarium-session') || '';
+let accountToken = '';
+let passwordReset = false;
+let inviteToken = '';
+let savingRemote = false;
+let remoteSaveChain = Promise.resolve();
 let accountPortalUrl = '';
 let accountError = '';
 let accountSetupNeeded = false;
@@ -54,20 +59,8 @@ const demoGroup = {
   description: 'Acompanhe os membros, a participação e o progresso nas atividades.',
   memberIds: ['demo-ana', 'demo-caio', 'demo-lia', 'demo-mateus', 'demo-bia']
 };
-const demoMembers = [
-  { id: 'demo-ana', name: 'Ana Costa', username: 'ana.costa', initials: 'AC', bio: 'Estudante de piano e curiosa sobre harmonia.', groupRole: 'admin', presence: 'online', publications: ['Como pratico tríades maiores (demo)'], activities: ['Prática de acordes · hoje (demo)'] },
-  { id: 'demo-caio', name: 'Caio Nunes', username: 'caio.nunes', initials: 'CN', bio: 'Estudante de música e piano.', groupRole: 'moderator', presence: 'away', publications: [], activities: [] },
-  { id: 'demo-lia', name: 'Lia Martins', username: 'lia.martins', initials: 'LM', bio: 'Violão, percepção musical e composição.', groupRole: 'member', presence: 'offline', publications: ['Diário de composição (demo)'], activities: ['Estudo de intervalos · ontem (demo)'] },
-  { id: 'demo-mateus', name: 'Mateus Rocha', username: 'mateus.rocha', initials: 'MR', bio: 'Aprendendo piano e leitura à primeira vista.', groupRole: 'moderator', presence: 'online', publications: ['Meu primeiro exercício de leitura (demo)'], activities: ['Leitura à primeira vista · hoje (demo)'] },
-  { id: 'demo-bia', name: 'Bia Souza', username: 'bia.souza', initials: 'BS', bio: 'Gosta de explorar acordes e ritmos.', groupRole: 'member', presence: 'offline', publications: ['Ideias de ritmo para piano (demo)'], activities: ['Prática de ritmo · há 2 dias (demo)'] }
-];
-const demoParticipants = [
-  { id: 'demo-ana', name: 'Ana (demo)', initials: 'A' },
-  { id: 'demo-caio', name: 'Caio (demo)', initials: 'C' },
-  { id: 'demo-lia', name: 'Lia (demo)', initials: 'L' },
-  { id: 'demo-mateus', name: 'Mateus (demo)', initials: 'M' },
-  { id: 'demo-bia', name: 'Bia (demo)', initials: 'B' }
-];
+const demoMembers = [];
+const demoParticipants = [];
 const trailKeySignatures = [
   { value: 'C-major', label: 'Dó maior', type: 'sharp', count: 0 },
   { value: 'G-major', label: 'Sol maior', type: 'sharp', count: 1 },
@@ -205,21 +198,21 @@ async function accountRequest(path, options = {}, token = accountToken) {
   if (token) headers.set('Authorization', `Bearer ${token}`);
   let response;
   try {
-    response = await fetch(apiUrl(path), { ...options, headers });
+    if (accountSession) await identityUser();
+    response = await fetch(apiUrl(path), { ...options, headers, credentials: 'same-origin' });
   } catch {
-    throw new Error('Não foi possível conectar ao servidor. Inicie o Notarium com npm.cmd start ou confira a hospedagem.');
+    throw new Error('Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.');
   }
   let result;
   try { result = await response.json(); }
-  catch { throw new Error('O servidor não respondeu com JSON. Acesse o Notarium pelo servidor oficial, não pelo Live Server.'); }
+  catch { throw new Error('O servidor não respondeu com JSON. Atualize a página e tente novamente.'); }
   if (!response.ok) throw new Error(result.error || `A solicitação falhou (${response.status}).`);
   return result;
 }
 
 function saveAccountToken(token) {
   accountToken = token || '';
-  if (accountToken) sessionStorage.setItem('notarium-session', accountToken);
-  else sessionStorage.removeItem('notarium-session');
+
 }
 
 function onlineUserModel(source, user) {
@@ -233,27 +226,24 @@ function onlineUserModel(source, user) {
 function queueRemoteModelSave() {
   if (accountSession?.role !== 'teacher') return;
   clearTimeout(remoteSaveTimer);
-  remoteSaveTimer = setTimeout(async () => {
-    try {
-      await accountRequest('/api/model', {
-        method: 'PUT',
-        body: JSON.stringify({ model })
-      });
-      toast('Conteúdo sincronizado com o servidor.');
-    } catch (error) {
-      toast(`As alterações locais foram salvas, mas não sincronizadas: ${error.message}`, 'error');
-    }
-  }, 350);
+  remoteSaveTimer = setTimeout(() => {
+    remoteSaveTimer=null;
+    remoteSaveChain=remoteSaveChain.catch(()=>{}).then(async()=>{
+      savingRemote=true;
+      const snapshot=structuredClone(model);
+      try {
+        const result=await accountRequest('/api/model',{method:'PUT',body:JSON.stringify({model:snapshot})});
+        model.revision=result.revision;
+        toast('Conteúdo salvo no servidor.');
+      } catch(error) {toast(`Alterações ainda não salvas: ${error.message}`,'error');}
+      finally {savingRemote=false;}
+    });
+  },350);
 }
 
 async function syncOnlineMedia(mediaId) {
-  if (accountSession?.role !== 'teacher') return;
-  const file = await getMediaFile(mediaId);
-  const dataUrl = await mediaAsDataUrl(mediaId);
-  await accountRequest('/api/media', {
-    method: 'POST',
-    body: JSON.stringify({ id: mediaId, name: file.name, type: file.type, dataUrl })
-  });
+  // Uploads are already persisted by saveMediaFile before their IDs enter the model.
+  return mediaId;
 }
 
 async function syncReferencedMedia() {
@@ -307,7 +297,7 @@ function persist(message = 'Alterações salvas na conta.') {
     queueRemoteModelSave();
     render();
     if (message) toast(accountSession?.role === 'teacher'
-      ? 'Alterações sincronizadas com o servidor.'
+      ? 'Salvando alterações…'
       : message);
   } catch (error) {
     toast(error.message, 'error');
@@ -901,7 +891,7 @@ function renderExercise(id) {
   return `${pageHeading('EXERCÍCIO', exercise.title, exercise.instructions || 'Responda às questões e confira seu resultado.', `<button class="button secondary" type="button" data-action="go-exercises">← Todos os exercícios</button>${relatedLesson ? button(`← Aula: ${esc(relatedLesson.title)}`, 'open-lesson', 'secondary', `data-id="${esc(relatedLesson.id)}"`) : ''}${currentProfile().role === 'teacher' ? button('Editar exercício', 'edit-exercise', 'primary', `data-id="${esc(exercise.id)}"`) : ''}`)}
     <div class="exercise-intro"><span class="status-tag ${exerciseStatus(exercise)}">${esc({ draft: 'Rascunho', published: 'Publicado', closed: 'Encerrado', archived: 'Arquivado' }[exerciseStatus(exercise)])}</span><span class="difficulty-pill">${esc(exercise.difficulty || 'Geral')}</span><span>${questionCount} ${questionCount === 1 ? 'questão' : 'questões'}</span>${(exercise.lessonIds || []).length ? `<span>Relacionado a ${exercise.lessonIds.map(getLesson).filter(Boolean).map(lesson => esc(lesson.title)).join(', ')}</span>` : '<span>Exercício independente</span>'}</div>${assessmentTimer}
     ${currentProfile().role === 'teacher' ? `<div class="local-notice">Pré-visualização do professor. O gabarito e os dados permanecem neste navegador; não há controle seguro de acesso sem servidor.</div>` : ''}
-    <form class="exercise-attempt" id="exercise-attempt" data-started-at="${Date.now()}">${questions}<section class="attempt-attachment"><p class="eyebrow">ANEXOS DO ALUNO</p><label class="field-label" for="exercise-attachments">Enviar imagem ou arquivo <span class="optional-label">Opcional</span><input id="exercise-attachments" name="attachments" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.zip,.mp3,.wav,.m4a,.ogg"></label><small class="form-help">Você pode anexar até vários arquivos; cada arquivo pode ter no máximo 15 MB.</small></section><div class="attempt-footer"><span>Leia com calma e revise antes de enviar.</span><button class="button primary" type="submit" data-action="submit-attempt">Enviar respostas</button></div></form>${resultMarkup}`;
+    <form class="exercise-attempt" id="exercise-attempt" data-started-at="${Date.now()}">${questions}<section class="attempt-attachment"><p class="eyebrow">ANEXOS DO ALUNO</p><label class="field-label" for="exercise-attachments">Enviar imagem ou arquivo <span class="optional-label">Opcional</span><input id="exercise-attachments" name="attachments" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.zip,.mp3,.wav,.m4a,.ogg"></label><small class="form-help">Você pode anexar até vários arquivos; cada arquivo pode ter no máximo 3 MB.</small></section><div class="attempt-footer"><span>Leia com calma e revise antes de enviar.</span><button class="button primary" type="submit" data-action="submit-attempt">Enviar respostas</button></div></form>${resultMarkup}`;
 }
 
 function normalizeAnswer(value) {
@@ -1010,7 +1000,7 @@ function renderResults() {
     resultsExerciseId = exercises.find(item => model.attempts.some(attempt => attempt.exerciseId === item.id))?.id || exercises[0]?.id || null;
   }
   const selected = getExercise(resultsExerciseId);
-  if (!selected)   return `${pageHeading('ACOMPANHAMENTO LOCAL', 'Respostas', 'Crie um exercício para começar a acompanhar respostas.', '')}${empty('Nenhum exercício para analisar.', 'Crie uma atividade e simule respostas para testar os indicadores.', button('＋ Criar exercício', 'new-exercise', 'primary'), '✓')}`;
+  if (!selected)   return `${pageHeading('ACOMPANHAMENTO LOCAL', 'Respostas', 'Crie um exercício para começar a acompanhar respostas.', '')}${empty('Nenhum exercício para analisar.', 'Crie uma atividade e acompanhe as respostas dos alunos.', button('＋ Criar exercício', 'new-exercise', 'primary'), '✓')}`;
 
   const attempts = model.attempts.filter(attempt => attempt.exerciseId === selected.id)
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
@@ -1089,11 +1079,11 @@ function renderResults() {
   }).join('');
   const noAnswer = `<p class="chart-empty">Ainda não há respostas registradas para este indicador.</p>`;
   return `${pageHeading('ACOMPANHAMENTO DA TURMA', 'Respostas', 'Painel por exercício: respostas, correções e desempenho registrados na conta do servidor.', `<label class="results-select-label">Exercício<select id="results-exercise-select">${cards}</select></label>`)}
-    <section class="results-toolbar"><div><span class="status-tag ${exerciseStatus(selected)}">${esc({ draft: 'Rascunho', published: 'Publicado', closed: 'Encerrado', archived: 'Arquivado' }[exerciseStatus(selected)])}</span><strong>${esc(selected.title)}</strong></div><div class="results-actions">${button('＋ Simular 5 participantes', 'simulate-demo', 'primary', `data-id="${esc(selected.id)}"`)}${demoAttempts.length ? button('Limpar respostas demo', 'clear-demo', 'secondary', `data-id="${esc(selected.id)}"`) : ''}</div></section>
-    <div class="demo-explainer"><span aria-hidden="true">ⓘ</span><p>A turma de demonstração contém ${demoParticipants.length} participantes fictícios. Ela serve somente para testar; resultados reais da conta aparecem identificados separadamente. Questões pendentes ficam fora das taxas de erro e dos aproveitamentos.</p></div>
-    <section class="results-kpis"><article><span>Participantes demo</span><strong>${demoResponders}/${demoParticipants.length}</strong><small>${demoParticipants.length - demoResponders} ainda não responderam</small></article><article><span>Tentativas reais</span><strong>${realAttempts.length}</strong><small>Registros enviados pelas contas dos alunos</small></article><article><span>Acertos · erros</span><strong>${correctAnswers} · ${incorrectAnswers}</strong><small>${reviewedAnswers.length ? `${Math.round(correctAnswers / reviewedAnswers.length * 100)}% corretas nas corrigidas` : 'Sem respostas corrigidas'}</small></article><article><span>Pendentes de correção</span><strong>${pendingCount}</strong><small>Não entram como incorretas</small></article><article><span>Média de pontos</span><strong>${averagePoints}</strong><small>${averagePercent === null ? 'Sem pontuação corrigida' : `${averagePercent}% de aproveitamento corrigido`}</small></article></section>
-    <div class="results-chart-grid"><section class="results-panel"><div class="results-panel-heading"><h2>Participação · demonstração</h2><span>${demoResponders} de ${demoParticipants.length} responderam</span></div><div class="chart-wrap chart-doughnut"><canvas id="participation-chart" aria-label="Participação da turma de demonstração"></canvas></div></section><section class="results-panel"><div class="results-panel-heading"><h2>Respostas corrigidas</h2><span>${reviewedAnswers.length} avaliadas · ${pendingCount} pendentes</span></div><div class="chart-wrap chart-doughnut"><canvas id="review-chart" aria-label="Percentual de respostas corretas, incorretas e pendentes"></canvas></div></section><section class="results-panel results-panel-wide"><div class="results-panel-heading"><h2>Desempenho por questão</h2><span>Questões pendentes aparecem separadas</span></div>${questionStats.length ? '<div class="chart-wrap chart-question"><canvas id="question-chart" aria-label="Acertos, erros e pendências por questão"></canvas></div>' : noAnswer}</section><section class="results-panel results-panel-wide"><div class="results-panel-heading"><h2>Evolução das tentativas</h2><span>Somente registros reais do exercício</span></div>${timelineRecords.length >= 3 ? '<div class="chart-wrap chart-timeline"><canvas id="timeline-chart" aria-label="Evolução do aproveitamento por tentativa"></canvas></div>' : '<p class="chart-empty">Ainda é cedo para mostrar uma evolução confiável. São necessárias pelo menos três tentativas locais corrigidas.</p>'}</section></div>
-    <div class="results-lower-grid"><section class="results-panel"><div class="results-panel-heading"><h2>Questões com mais erros</h2><span>Entre respostas corrigidas</span></div>${difficultQuestions.length ? `<ol class="difficulty-list">${difficultQuestions.map(item => `<li><span><strong>Q${item.index + 1} · ${richTextMarkup(item.question.prompt)}</strong><small>${item.correct} acerto(s) · ${item.incorrect} erro(s) · ${item.pending} pendente(s)</small></span><b>${item.incorrect}</b></li>`).join('')}</ol>` : noAnswer}</section><section class="results-panel"><div class="results-panel-heading"><h2>Participantes da demonstração</h2><span>Dados fictícios</span></div><div class="demo-roster">${demoParticipants.map(participant => `<div class="demo-roster-person"><span class="demo-avatar">${participant.initials}</span><span>${esc(participant.name)}</span><span class="status-tag ${demoAttempts.some(attempt => attempt.demoParticipantId === participant.id) ? 'completed' : 'draft'}">${demoAttempts.some(attempt => attempt.demoParticipantId === participant.id) ? 'Respondeu' : 'Não respondeu'}</span></div>`).join('')}</div></section></div>
+    <section class="results-toolbar"><div><span class="status-tag ${exerciseStatus(selected)}">${esc({ draft: 'Rascunho', published: 'Publicado', closed: 'Encerrado', archived: 'Arquivado' }[exerciseStatus(selected)])}</span><strong>${esc(selected.title)}</strong></div><div class="results-actions">${demoAttempts.length ? button('Limpar respostas demo', 'clear-demo', 'secondary', `data-id="${esc(selected.id)}"`) : ''}</div></section>
+
+    <section class="results-kpis"><article><span>Tentativas reais</span><strong>${realAttempts.length}</strong><small>Registros enviados pelas contas dos alunos</small></article><article><span>Acertos · erros</span><strong>${correctAnswers} · ${incorrectAnswers}</strong><small>${reviewedAnswers.length ? `${Math.round(correctAnswers / reviewedAnswers.length * 100)}% corretas nas corrigidas` : 'Sem respostas corrigidas'}</small></article><article><span>Pendentes de correção</span><strong>${pendingCount}</strong><small>Não entram como incorretas</small></article><article><span>Média de pontos</span><strong>${averagePoints}</strong><small>${averagePercent === null ? 'Sem pontuação corrigida' : `${averagePercent}% de aproveitamento corrigido`}</small></article></section>
+    <div class="results-chart-grid"><section class="results-panel"><div class="results-panel-heading"><h2>Participação da turma</h2><span>${new Set(realAttempts.map(a=>a.studentId)).size} alunos responderam</span></div><div class="chart-wrap chart-doughnut"><canvas id="participation-chart" aria-label="Participação da turma de demonstração"></canvas></div></section><section class="results-panel"><div class="results-panel-heading"><h2>Respostas corrigidas</h2><span>${reviewedAnswers.length} avaliadas · ${pendingCount} pendentes</span></div><div class="chart-wrap chart-doughnut"><canvas id="review-chart" aria-label="Percentual de respostas corretas, incorretas e pendentes"></canvas></div></section><section class="results-panel results-panel-wide"><div class="results-panel-heading"><h2>Desempenho por questão</h2><span>Questões pendentes aparecem separadas</span></div>${questionStats.length ? '<div class="chart-wrap chart-question"><canvas id="question-chart" aria-label="Acertos, erros e pendências por questão"></canvas></div>' : noAnswer}</section><section class="results-panel results-panel-wide"><div class="results-panel-heading"><h2>Evolução das tentativas</h2><span>Somente registros reais do exercício</span></div>${timelineRecords.length >= 3 ? '<div class="chart-wrap chart-timeline"><canvas id="timeline-chart" aria-label="Evolução do aproveitamento por tentativa"></canvas></div>' : '<p class="chart-empty">Ainda é cedo para mostrar uma evolução confiável. São necessárias pelo menos três tentativas locais corrigidas.</p>'}</section></div>
+    <div class="results-lower-grid"><section class="results-panel"><div class="results-panel-heading"><h2>Questões com mais erros</h2><span>Entre respostas corrigidas</span></div>${difficultQuestions.length ? `<ol class="difficulty-list">${difficultQuestions.map(item => `<li><span><strong>Q${item.index + 1} · ${richTextMarkup(item.question.prompt)}</strong><small>${item.correct} acerto(s) · ${item.incorrect} erro(s) · ${item.pending} pendente(s)</small></span><b>${item.incorrect}</b></li>`).join('')}</ol>` : noAnswer}</section><section class="results-panel"><div class="results-panel-heading"><h2>Alunos com respostas</h2><span>Contas individuais</span></div><div class="demo-roster">${studentsCache.map(student => ({...student, initials:student.name.slice(0,2)})).map(participant => `<div class="demo-roster-person"><span class="demo-avatar">${participant.initials}</span><span>${esc(participant.name)}</span><span class="status-tag ${realAttempts.some(attempt => attempt.studentId === participant.id) ? 'completed' : 'draft'}">${realAttempts.some(attempt => attempt.studentId === participant.id) ? 'Respondeu' : 'Não respondeu'}</span></div>`).join('')}</div></section></div>
     <section class="results-panel individual-results"><div class="results-panel-heading"><div><h2>Respostas individuais</h2><p>Notas, respostas, acertos e itens aguardando correção</p></div><span>${attempts.length} tentativa(s)</span></div>${rows ? `<div class="response-list">${rows}</div>` : empty('Nenhuma resposta recebida ainda.', 'Simule participantes fictícios ou envie o exercício usando o perfil local de aluno.', '', '✓')}</section>`;
 }
 
@@ -1282,7 +1272,7 @@ function renderSettings() {
     const roleControl = accountSession
       ? `<div class="profile-public-note">Função da conta: ${profile.role === 'teacher' ? 'Professor' : 'Aluno'}. Ela é definida pelo acesso online e não pode ser alterada pelo perfil.</div>`
       : `<label class="field-label">Visualizar como<select name="role"><option value="teacher" ${profile.role === 'teacher' ? 'selected' : ''}>Professor — criar e organizar conteúdo</option><option value="student" ${profile.role === 'student' ? 'selected' : ''}>Aluno — ver conteúdo publicado e praticar</option></select></label>`;
-    section = `<div class="profile-content-grid"><section class="profile-panel"><div class="section-heading"><div><p class="eyebrow">INFORMAÇÕES PESSOAIS</p><h2>Editar perfil</h2></div></div><form id="profile-form" class="stack-form profile-edit-form"><label class="field-label">Foto ou avatar<input name="avatarFile" type="file" accept="image/png,image/jpeg,image/webp"><small class="form-help">PNG, JPEG ou WebP; até 5 MB. ${accountSession ? 'O arquivo permanece neste navegador.' : 'A imagem é reduzida antes de ser guardada.'}</small></label><div class="profile-avatar-preview">${profileAvatar(profile)}<div><strong>Prévia do avatar</strong><small>Escolha uma imagem ou mantenha as iniciais.</small></div>${profile.avatarDataUrl ? button('Remover foto', 'clear-avatar', 'secondary', 'data-form-input="avatarFile"') : ''}</div><label class="field-label">Nome de exibição<input name="displayName" maxlength="60" required value="${esc(profile.displayName)}"></label><label class="field-label">Nome de usuário${accountSession ? '' : ' local'}<input name="username" maxlength="30" ${accountSession ? 'minlength="3" required' : ''} value="${esc(profile.username)}" placeholder="ex.: nome.usuario"><small class="form-help">Sem espaços; o @ é exibido automaticamente. ${accountSession ? 'Este é o usuário usado para entrar.' : 'Válido neste navegador.'}</small></label><label class="field-label">Biografia<textarea name="bio" maxlength="500" rows="3" placeholder="Conte sobre seus estudos musicais">${esc(profile.bio || '')}</textarea></label><div class="profile-public-note">Seu perfil é público para manter a colaboração e a visualização das trilhas.</div>${roleControl}<small class="profile-form-error" data-profile-error role="status"></small><button class="button primary" type="submit">Salvar alterações do perfil</button></form><small class="privacy-note">${accountSession ? 'Nome e usuário são atualizados na conta do servidor. Avatar e biografia permanecem neste navegador.' : 'O perfil e os dados permanecem neste navegador; não há contas autenticadas nem sincronização em nuvem.'}</small></section><div class="profile-side-column"><section class="profile-panel"><p class="eyebrow">ATIVIDADE MUSICAL</p><h2>Suas atividades</h2>${activity}</section><section class="profile-panel"><p class="eyebrow">PUBLICAÇÕES</p><h2>Nenhuma publicação</h2><p class="profile-empty-copy">A aplicação local ainda não tem um mural de publicações.</p></section></div></div>`;
+    section = `<div class="profile-content-grid"><section class="profile-panel"><div class="section-heading"><div><p class="eyebrow">INFORMAÇÕES PESSOAIS</p><h2>Editar perfil</h2></div></div><form id="profile-form" class="stack-form profile-edit-form"><label class="field-label">Foto ou avatar<input name="avatarFile" type="file" accept="image/png,image/jpeg,image/webp"><small class="form-help">PNG, JPEG ou WebP; até 5 MB. ${accountSession ? 'A foto é salva no seu perfil privado.' : 'A imagem é reduzida antes de ser guardada.'}</small></label><div class="profile-avatar-preview">${profileAvatar(profile)}<div><strong>Prévia do avatar</strong><small>Escolha uma imagem ou mantenha as iniciais.</small></div>${profile.avatarDataUrl ? button('Remover foto', 'clear-avatar', 'secondary', 'data-form-input="avatarFile"') : ''}</div><label class="field-label">Nome de exibição<input name="displayName" maxlength="60" required value="${esc(profile.displayName)}"></label><label class="field-label">Nome de usuário${accountSession ? '' : ' local'}<input name="username" maxlength="30" ${accountSession ? 'minlength="3" required' : ''} value="${esc(profile.username)}" placeholder="ex.: nome.usuario"><small class="form-help">Sem espaços; o @ é exibido automaticamente. ${accountSession ? 'Este é o usuário usado para entrar.' : 'Válido neste navegador.'}</small></label><label class="field-label">Biografia<textarea name="bio" maxlength="500" rows="3" placeholder="Conte sobre seus estudos musicais">${esc(profile.bio || '')}</textarea></label><div class="profile-public-note">Seu perfil é acessível por você e pelos professores autorizados.</div>${roleControl}<small class="profile-form-error" data-profile-error role="status"></small><button class="button primary" type="submit">Salvar alterações do perfil</button></form><small class="privacy-note">${accountSession ? 'Nome, usuário, foto e biografia são salvos na sua conta.' : 'O perfil e os dados permanecem neste navegador; não há contas autenticadas nem sincronização em nuvem.'}</small></section><div class="profile-side-column"><section class="profile-panel"><p class="eyebrow">ATIVIDADE MUSICAL</p><h2>Suas atividades</h2>${activity}</section><section class="profile-panel"><p class="eyebrow">PUBLICAÇÕES</p><h2>Nenhuma publicação</h2><p class="profile-empty-copy">A aplicação local ainda não tem um mural de publicações.</p></section></div></div>`;
   } else {
     section = '';
   }
@@ -1303,12 +1293,13 @@ function renderConfigurations() {
       <label class="field-label">Nota do clique<select id="click-sound-note">${clickNotes}</select></label>
       <label class="field-label">Volume do clique <output id="click-volume-output">${Number(localStorage.getItem('notarium-click-volume') || 300)}%</output><input id="click-sound-volume" type="range" min="80" max="300" step="10" value="${Number(localStorage.getItem('notarium-click-volume') || 300)}"></label>
       <p class="form-help">O som de notificações permanece fixo e independente do som de clique.</p></section>
-      <section class="settings-card"><p class="eyebrow">SALVAMENTO AUTOMÁTICO</p><h2>Conta online</h2><p>Conteúdo, respostas, alunos e avaliações são sincronizados automaticamente e salvos no servidor.</p><small class="privacy-note">Não há opções de cópia de segurança nesta tela.</small></section></div>`;
+      <section class="settings-card"><p class="eyebrow">SALVAMENTO AUTOMÁTICO</p><h2>Conta online</h2><p>Conteúdo, respostas, alunos e avaliações são sincronizados automaticamente e salvos no servidor.</p><div class="settings-actions">${button('Editor de partitura','open-composition','secondary')}${accountSession?.isAdmin ? button('Consultar backups','backup-monitor','secondary') : ''}</div><p>Backup diário às 03h UTC. A consulta mostra execuções confirmadas pelo servidor.</p></section></div>`;
 }
 
 function renderAccountLogin() {
   const setup = accountSetupNeeded;
-  return `<main class="account-login-page"><section class="account-login-card"><img class="account-login-logo" src="icone.png" alt=""><p class="eyebrow">NOTARIUM · ACESSO ONLINE</p><h1>${setup ? 'Configure sua conta de professor' : 'Entre na sua conta'}</h1><p class="page-description">${setup ? 'Crie a primeira conta para administrar a turma e cadastrar acessos individuais para seus alunos.' : 'Use o usuário e a senha que o professor criou para você.'}</p><form id="account-access-form" class="stack-form account-access-form">${setup ? `<label class="field-label">Nome de exibição<input name="name" maxlength="60" required autocomplete="name" placeholder="Como você será identificado"></label>` : ''}<label class="field-label">Nome de usuário<input name="username" minlength="3" maxlength="30" required autocomplete="username" placeholder="ex.: ana.silva"></label><label class="field-label">Senha<input name="password" type="password" minlength="${setup ? '10' : '1'}" maxlength="256" required autocomplete="${setup ? 'new-password' : 'current-password'}"></label>${setup ? '<small class="form-help">Use de 3 a 30 caracteres no usuário e uma senha de pelo menos 10 caracteres.</small>' : ''}<p class="account-form-error" role="alert">${esc(accountError)}</p><button class="button primary" type="submit">${setup ? 'Criar conta de professor' : 'Entrar'}</button></form><small class="privacy-note">As contas são armazenadas automaticamente no servidor. O acesso exige uma conta válida.</small></section></main>`;
+  if (passwordReset) return `<main class="account-login-page"><section class="account-login-card"><h1>Defina sua nova senha</h1><form id="password-reset-form" class="stack-form"><label class="field-label">Nova senha<input type="password" name="password" minlength="12" maxlength="128" required autocomplete="new-password"></label><label class="field-label">Confirme a senha<input type="password" name="confirmPassword" minlength="12" maxlength="128" required autocomplete="new-password"></label><p role="alert">${esc(accountError)}</p><button class="button primary">Salvar senha</button></form></section></main>`;
+  return `<main class="account-login-page"><section class="account-login-card"><img class="account-login-logo" src="icone.png" alt=""><p class="eyebrow">NOTARIUM · ACESSO SEGURO</p><h1>${setup ? 'Boas-vindas ao seu espaço musical' : 'Entre na sua conta'}</h1><p>${setup ? 'Crie a primeira conta de professor para começar. Os próximos acessos dependem de autorização.' : 'Entre com seu usuário ou e-mail e sua senha.'}</p><form id="account-access-form" class="stack-form">${setup ? '<label class="field-label">Nome completo<input name="name" minlength="3" maxlength="100" required autocomplete="name"></label><label class="field-label">E-mail<input name="email" type="email" maxlength="254" required autocomplete="email"></label>' : ''}<label class="field-label">${setup ? 'Nome de usuário' : 'Usuário ou e-mail'}<input name="username" required maxlength="254" autocomplete="username"></label><label class="field-label">Senha<input name="password" type="password" minlength="${setup ? 12 : 1}" maxlength="128" required autocomplete="${setup ? 'new-password' : 'current-password'}"></label>${setup ? '<label class="field-label">Confirme a senha<input name="confirmPassword" type="password" minlength="12" maxlength="128" required autocomplete="new-password"></label>' : ''}<p class="account-form-error" role="alert">${esc(accountError)}</p><button class="button primary">${setup ? 'Criar primeira conta de professor' : 'Entrar'}</button></form><details><summary>Recuperar senha</summary><form id="password-recovery-form" class="stack-form"><label class="field-label">E-mail<input name="email" type="email" required autocomplete="email"></label><button class="button secondary">Enviar instruções</button><p role="status" id="recovery-status"></p></form></details></section></main>`;
 }
 
 function renderStudents() {
@@ -1326,7 +1317,7 @@ function renderStudents() {
   const students = studentsCache.length
     ? `<div class="student-account-list">${studentsCache.map(student => `<article class="student-account-card"><span class="student-avatar">${esc((student.name || 'A').slice(0, 1).toUpperCase())}</span><div class="student-account-copy"><strong>${esc(student.name)}</strong><small>@${esc(student.username)} · ${studentPresenceLabel(student.lastSeenAt, student.online)}</small><small>Conta criada em ${new Date(student.createdAt).toLocaleDateString('pt-BR')}</small></div><button type="button" class="button danger small-button" data-action="remove-student" data-id="${esc(student.id)}">Remover</button></article>`).join('')}</div>`
     : '<div class="student-list-empty"><strong>Nenhum aluno cadastrado ainda.</strong><p>Crie o primeiro acesso pelo formulário ao lado.</p></div>';
-  return `${heading}<section class="account-portal-card"><div><p class="eyebrow">PORTAL DOS ALUNOS</p><h2>Compartilhe o endereço do Notarium</h2><p>Os alunos entram com o nome de usuário e a senha que você criar abaixo.</p><code>${esc(portal)}</code></div><button type="button" class="button secondary" data-action="copy-portal-link">Copiar endereço</button></section>${created}<div class="student-management-grid"><section class="profile-panel"><p class="eyebrow">NOVO ACESSO</p><h2>Criar aluno</h2><p>O nome é exibido no perfil. O nome de usuário é separado e será usado para entrar.</p><form id="student-create-form" class="stack-form"><label class="field-label">Nome de exibição<input name="name" maxlength="60" required autocomplete="name" placeholder="Nome do aluno"></label><label class="field-label">Nome de usuário<input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9._-]{3,30}" required autocomplete="off" placeholder="ex.: maria.silva"><small class="form-help">De 3 a 30 caracteres; use letras, números, ponto, traço ou sublinhado.</small></label><label class="field-label">Senha inicial<input name="password" type="password" minlength="10" maxlength="256" required autocomplete="new-password"><small class="form-help">No mínimo 10 caracteres. Ela será mostrada uma vez para você compartilhar.</small></label><p class="account-form-error" data-student-error role="alert"></p><button class="button primary" type="submit">Criar acesso</button></form></section><section class="profile-panel"><div class="student-list-heading"><div><p class="eyebrow">CONTAS DA TURMA</p><h2>Alunos cadastrados <span class="count-pill">${studentsCache.length}</span></h2></div><button type="button" class="button secondary small-button" data-action="refresh-students">Atualizar</button></div>${students}</section></div><div class="settings-actions">${button('Sair / trocar de conta', 'logout', 'secondary')}</div>`;
+  return `${heading}<section class="account-portal-card"><div><p class="eyebrow">PORTAL DOS ALUNOS</p><h2>Compartilhe o endereço do Notarium</h2><p>Os alunos entram com o nome de usuário e a senha que você criar abaixo.</p><code>${esc(portal)}</code></div><button type="button" class="button secondary" data-action="copy-portal-link">Copiar endereço</button></section>${created}<div class="student-management-grid"><section class="profile-panel"><p class="eyebrow">NOVO ACESSO</p><h2>Criar conta autorizada</h2><p>O nome é exibido no perfil. O nome de usuário é separado e será usado para entrar.</p><form id="student-create-form" class="stack-form">${accountSession?.isAdmin ? `<label class="field-label">Tipo de conta<select name="accountRole"><option value="student">Aluno</option><option value="teacher">Professor autorizado</option></select></label>` : ''}<label class="field-label">E-mail<input name="email" type="email" required autocomplete="email"></label><label class="field-label">Nome de exibição<input name="name" maxlength="60" required autocomplete="name" placeholder="Nome do aluno"></label><label class="field-label">Nome de usuário<input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9._-]{3,30}" required autocomplete="off" placeholder="ex.: maria.silva"><small class="form-help">De 3 a 30 caracteres; use letras, números, ponto, traço ou sublinhado.</small></label><label class="field-label">Senha inicial<input name="password" type="password" minlength="12" maxlength="128" required autocomplete="new-password"><small class="form-help">No mínimo 12 caracteres. Ela será mostrada uma vez para você compartilhar.</small></label><p class="account-form-error" data-student-error role="alert"></p><button class="button primary" type="submit">Criar acesso</button></form></section><section class="profile-panel"><div class="student-list-heading"><div><p class="eyebrow">CONTAS DA TURMA</p><h2>Alunos cadastrados <span class="count-pill">${studentsCache.length}</span></h2></div><button type="button" class="button secondary small-button" data-action="refresh-students">Atualizar</button></div>${students}</section></div><div class="settings-actions">${button('Sair / trocar de conta', 'logout', 'secondary')}</div>`;
 }
 
 function openQuickSettings() {
@@ -1383,7 +1374,7 @@ function showLoginLoading() {
       clearInterval(quoteTimer);
       loadingQuote = null;
       resolve();
-    }, 10_000);
+    }, 300);
   });
 }
 
@@ -1401,7 +1392,7 @@ async function showAccountLogin() {
 }
 
 async function startOnlineSession(endpoint, payload) {
-  const localModel = importModel(exportModel(model));
+  const localModel = await loadModel();
   const response = await accountRequest(endpoint, {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -1446,6 +1437,7 @@ async function logoutAccount() {
   let serverLogoutFailed = false;
   try { await accountRequest('/api/auth/logout', { method: 'POST', body: '{}' }); }
   catch { serverLogoutFailed = true; }
+  try { await clientLogout(); } catch { /* The SDK clears browser session state even on provider failure. */ }
   saveAccountToken('');
   clearInterval(presenceTimer);
   presenceTimer = null;
@@ -1456,10 +1448,10 @@ async function logoutAccount() {
   studentsCache = [];
   studentsLoaded = false;
   lastCreatedStudentAccess = null;
-  model.profile.role = 'teacher';
+  model = await loadModel();
   await showAccountLogin();
   toast(serverLogoutFailed
-    ? 'Sessão encerrada neste navegador. O servidor não respondeu; a sessão será descartada quando ele reiniciar.'
+    ? 'Sessão encerrada neste navegador. O servidor não respondeu; tente sair novamente antes de compartilhar este dispositivo.'
     : 'Sessão encerrada. Entre novamente com sua conta.');
 }
 
@@ -2051,9 +2043,10 @@ function trailStaffMarkup(steps, settings) {
 }
 
 function renderTrail() {
+  if (accountSession?.role === 'teacher' && !studentsCache.length) { if (!studentsLoaded && !studentsLoading) refreshStudents(); return pageHeading('TRILHA', 'Trilha de estudo', 'Cadastre um aluno para montar sua trilha.', ''); }
   const member = currentProfile().role === 'student' && accountSession
     ? getTrailMember(accountSession.id)
-    : getTrailMember(selectedTrailStudentId) || demoMembers[0];
+    : getTrailMember(selectedTrailStudentId) || studentsCache[0];
   if (!member) return empty('Sua trilha ainda está sendo preparada.', 'Volte em alguns instantes para conferir as etapas adicionadas pelo professor.', '', '𝄞');
   selectedTrailStudentId = member.id;
   const teacher = currentProfile().role === 'teacher';
@@ -2347,7 +2340,7 @@ function render() {
   }
   else if (view === 'trilha') content.innerHTML = renderTrail();
   else if (view === 'grupo') content.innerHTML = selectedProfileId ? renderMemberProfile(selectedProfileId) : renderGroup();
-  else if (view === 'resultados') content.innerHTML = currentProfile().role === 'teacher' ? renderGroup() : renderHome();
+  else if (view === 'resultados') content.innerHTML = currentProfile().role === 'teacher' ? renderResults() : renderHome();
   else if (view === 'alunos') content.innerHTML = renderStudents();
   else if (view === 'notificacoes') content.innerHTML = renderNotifications();
   else if (view === 'perfil') content.innerHTML = renderSettings();
@@ -2375,7 +2368,7 @@ function render() {
       toast(`Não foi possível carregar os alunos: ${error.message}`, 'error');
     }).finally(() => {
       studentsLoading = false;
-      if (['alunos', 'trilha'].includes(view)) render();
+      if (['alunos', 'trilha', 'grupo'].includes(view)) render();
     });
   }
 }
@@ -2574,11 +2567,14 @@ function collectContentEditors(container) {
   });
 }
 
+function assignmentFields(item) {
+  return `<label class="field-label">Destinatários<select name="studentIds" multiple size="4">${studentsCache.map(student=>`<option value="${esc(student.id)}" ${(item?.studentIds || []).includes(student.id) ? 'selected' : ''}>${esc(student.name)}</option>`).join('')}</select><small>Sem seleção: toda a turma. Para restringir, selecione os alunos autorizados.</small></label>`;
+}
 function openLessonEditor(blockId = '', id = '') {
   const lesson = getLesson(id);
   if (lesson) blockId = lesson.blockId || '';
   const dialog = openDialog(`<p class="eyebrow">EDITOR DE AULA · BLOCOS DE CONTEÚDO</p><h2>${lesson ? 'Editar aula' : 'Criar aula'}</h2><p class="dialog-intro">Monte uma explicação em blocos e visualize o resultado antes de publicar.</p><form id="lesson-form" class="stack-form">
-    <input type="hidden" name="id" value="${esc(id)}">
+    <input type="hidden" name="id" value="${esc(id)}">${assignmentFields(lesson)}
     <label class="field-label">Bloco de aulas<select name="blockId"><option value="">Sem bloco</option>${model.blocks.map(block => `<option value="${esc(block.id)}" ${block.id === blockId ? 'selected' : ''}>${esc(block.title)}</option>`).join('')}</select></label>
     <div class="form-grid"><label class="field-label">Título da aula<input name="title" required maxlength="100" value="${esc(lesson?.title || '')}" placeholder="Ex.: Formação de tríades"></label><label class="field-label">Subtítulo (opcional)<input name="subtitle" maxlength="140" value="${esc(lesson?.subtitle || '')}" placeholder="Uma frase que apresenta o tema"></label></div>
     <label class="field-label">Introdução<textarea name="description" rows="3" maxlength="600" placeholder="Apresente o objetivo desta aula">${esc(lesson?.description || '')}</textarea></label>
@@ -2611,7 +2607,7 @@ function openLessonEditor(blockId = '', id = '') {
       id: id || createId(), blockId: newBlockId, title: String(form.get('title')).trim(),
       subtitle: String(form.get('subtitle')).trim(), description: String(form.get('description')).trim(),
       coverUrl: String(form.get('coverUrl')).trim(), order: Number(form.get('order')) || 1,
-      published: form.get('published') === 'true', content,
+      published: form.get('published') === 'true', content, studentIds:form.getAll('studentIds'),
       exerciseIds, createdAt: previous?.createdAt || new Date().toISOString()
     };
     if (previous) Object.assign(previous, data);
@@ -2667,7 +2663,7 @@ function openExerciseEditor(id = '', relatedLessonId = '', asAssessment = false,
   exerciseDraft = structuredClone(initialQuestions);
   pendingScoreFiles = new Map();
   const dialog = openDialog(`<p class="eyebrow">CONSTRUTOR DE ATIVIDADES</p><h2>${exercise ? isAssessment ? 'Editar avaliação' : 'Editar exercício' : isAssessment ? 'Criar avaliação' : 'Criar exercício'}</h2><p class="dialog-intro">Cada questão tem seus próprios campos, pontuação e critério de correção.</p><form id="exercise-form" class="stack-form" novalidate>
-    <input type="hidden" name="id" value="${esc(id)}">
+    <input type="hidden" name="id" value="${esc(id)}">${assignmentFields(exercise)}
     <label class="field-label">Título do exercício<input name="title" maxlength="100" value="${esc(exercise?.title || '')}" placeholder="Ex.: Identificação de tríades"></label>
     <label class="field-label exercise-group-field">Bloco de exercícios<select name="exerciseBlockId" ${isAssessment ? 'disabled' : 'required'}><option value="">Escolha um bloco</option>${model.exerciseBlocks.map(block => `<option value="${esc(block.id)}" ${block.id === defaultExerciseBlockId ? 'selected' : ''}>${esc(block.title)}</option>`).join('')}</select><small class="form-help">${isAssessment ? 'Avaliações ficam separadas dos blocos de exercícios.' : 'A atividade ficará organizada dentro deste bloco.'}</small></label>
     <label class="field-label">Instruções<textarea name="instructions" rows="2" maxlength="400" placeholder="Orientações para quem vai responder">${esc(exercise?.instructions || '')}</textarea></label>
@@ -2817,7 +2813,7 @@ function renderQuestionEditors(dialog) {
     } else if (kind === 'score') {
       const scoreSource = question.scoreSource || (question.musicMediaId || question.musicXml ? 'upload' : 'link');
       const scoreName = pendingScoreFiles.get(question.id)?.name || question.musicMediaName || '';
-      specific = `<label class="field-label">Como adicionar a partitura<select class="question-score-source"><option value="upload" ${scoreSource === 'upload' ? 'selected' : ''}>Enviar arquivo do computador</option><option value="link" ${scoreSource === 'link' ? 'selected' : ''}>Adicionar link</option></select></label><div class="score-upload-fields" ${scoreSource === 'upload' ? '' : 'hidden'}><label class="field-label">Arquivo MusicXML (.xml, .musicxml ou .mxl)<input class="question-musicxml" type="file" accept=".xml,.musicxml,.mxl,application/xml,application/vnd.recordare.musicxml,application/zip"></label><small class="form-help">${scoreName ? `Arquivo anexado: ${esc(scoreName)}. ` : ''}Até 5 MB; arquivos XML e MXL são aceitos.</small></div><div class="score-link-fields" ${scoreSource === 'link' ? '' : 'hidden'}><label class="field-label">Link público da partitura<input class="question-musicxml-url" type="url" value="${esc(question.musicUrl || '')}" placeholder="https://.../partitura.xml"><small class="form-help">Aceita links para XML, MusicXML e MXL. O servidor deve permitir acesso externo (CORS).</small></label></div><div class="form-grid"><label class="field-label">Número do compasso<input class="question-measure" type="number" min="1" value="${esc(question.measure || 1)}"></label><label class="field-label">Resposta esperada (ou deixe vazia para correção manual)<input class="question-answer" value="${esc(question.answer || '')}" placeholder="Ex.: Sol maior"></label></div>`;
+      specific = `<label class="field-label">Como adicionar a partitura<select class="question-score-source"><option value="upload" ${scoreSource === 'upload' ? 'selected' : ''}>Enviar arquivo do computador</option><option value="link" ${scoreSource === 'link' ? 'selected' : ''}>Adicionar link</option></select></label><div class="score-upload-fields" ${scoreSource === 'upload' ? '' : 'hidden'}><label class="field-label">Arquivo MusicXML (.xml, .musicxml ou .mxl)<input class="question-musicxml" type="file" accept=".xml,.musicxml,.mxl,application/xml,application/vnd.recordare.musicxml,application/zip"></label><small class="form-help">${scoreName ? `Arquivo anexado: ${esc(scoreName)}. ` : ''}Até 3 MB; arquivos XML e MXL são aceitos.</small></div><div class="score-link-fields" ${scoreSource === 'link' ? '' : 'hidden'}><label class="field-label">Link público da partitura<input class="question-musicxml-url" type="url" value="${esc(question.musicUrl || '')}" placeholder="https://.../partitura.xml"><small class="form-help">Aceita links para XML, MusicXML e MXL. O servidor deve permitir acesso externo (CORS).</small></label></div><div class="form-grid"><label class="field-label">Número do compasso<input class="question-measure" type="number" min="1" value="${esc(question.measure || 1)}"></label><label class="field-label">Resposta esperada (ou deixe vazia para correção manual)<input class="question-answer" value="${esc(question.answer || '')}" placeholder="Ex.: Sol maior"></label></div>`;
     } else if (kind === 'rhythm') {
       const scoreName = pendingScoreFiles.get(question.id)?.name || question.musicMediaName || '';
       specific = `<label class="field-label">Partitura rítmica · MusicXML (.xml, .musicxml ou .mxl)<input class="question-musicxml" type="file" accept=".xml,.musicxml,.mxl,application/xml,application/vnd.recordare.musicxml,application/zip"><small class="form-help">${scoreName ? `Arquivo anexado: ${esc(scoreName)}. ` : ''}Até 5 MB. Selecione uma melodia de uma parte para melhor leitura rítmica.</small></label><div class="form-grid"><label class="field-label">Execuções permitidas<input class="question-rhythm-retry-limit" type="number" min="1" max="10" value="${Math.min(10, Math.max(1, Number(question.retryLimit) || 3))}"></label><label class="field-label">Tolerância rítmica (ms)<input class="question-rhythm-tolerance" type="number" min="60" max="500" step="10" value="${Math.min(500, Math.max(60, Number(question.toleranceMs) || 220))}"></label></div><small class="form-help">Depois da contagem de quatro tempos, o aluno toca cada nota no início correto. Os erros de cada execução ficam salvos.</small>`;
@@ -3029,7 +3025,7 @@ function saveExerciseFromDialog(dialog, id, saveAsDraft = false) {
     instructions: String(form.get('instructions') || '').trim(),
     difficulty: String(form.get('difficulty') || 'Iniciante'),
     status: saveAsDraft ? 'draft' : String(form.get('status') || 'draft'),
-    published: !saveAsDraft && form.get('status') === 'published',
+    published: !saveAsDraft && form.get('status') === 'published', studentIds:form.getAll('studentIds'),
     showAnswers: dialog.querySelector('[name="showAnswers"]').checked,
     exerciseBlockId,
     assessment: isAssessment ? {
@@ -3239,16 +3235,6 @@ async function submitAttempt(form, exercise) {
   catch (error) { model.attempts.pop(); toast(error.message, 'error'); return; }
   if (accountSession?.role === 'student') {
     try {
-      for (const attachment of attachments) {
-        await accountRequest('/api/media', {
-          method: 'POST',
-          body: JSON.stringify({
-            id: attachment.id,
-            name: attachment.name,
-            dataUrl: await mediaAsDataUrl(attachment.id)
-          })
-        });
-      }
       const saved = await accountRequest('/api/attempts', {
         method: 'POST',
         body: JSON.stringify({ attempt })
@@ -3257,8 +3243,8 @@ async function submitAttempt(form, exercise) {
       model.attempts.push(saved.attempt);
       model = saveModel(model);
     } catch (error) {
-      render();
-      toast(`Resposta salva somente neste navegador; não foi enviada ao professor: ${error.message}`, 'error');
+      model.attempts = model.attempts.filter(item=>item.id!==attempt.id);
+      toast(`A resposta ainda não foi enviada. Tente novamente: ${error.message}`, 'error');
       return;
     }
   }
@@ -3460,7 +3446,7 @@ async function saveProfile(form) {
     try {
       const updated = await accountRequest('/api/account/profile', {
         method: 'PUT',
-        body: JSON.stringify({ name: displayName, username })
+        body: JSON.stringify({ name: displayName, username, bio: String(data.get('bio') || ''), avatarDataUrl, defaultOctave: Number(data.get('defaultOctave')) })
       });
       accountSession = updated.user;
     } catch (error) {
@@ -3770,12 +3756,12 @@ root.addEventListener('click', event => {
   } else if (action === 'play-reference') {
     const exercise = getExercise(activeExerciseId);
     const question = exercise?.questions.find(item => item.id === actionButton.dataset.question);
-    const notes = question?.referenceNotes?.map(parseCurrentNote).filter(Number.isFinite) || [];
-    playNotes(notes, 0.9, defaultOctave()).catch(error => toast(error.message, 'error'));
+    if(accountSession?.role === 'student') playPrivateReference(activeExerciseId,question?.id).catch(error=>toast(error.message,'error'));
+    else {const notes = question?.referenceNotes?.map(parseCurrentNote).filter(Number.isFinite) || [];playNotes(notes,0.9,defaultOctave()).catch(error=>toast(error.message,'error'));}
   } else if (action === 'play-chord-reference') {
     const question = getExercise(activeExerciseId)?.questions.find(item => item.id === actionButton.dataset.question);
-    const notes = question?.referenceNotes?.map(parseCurrentNote).filter(Number.isFinite) || [];
-    playNotes(notes, 0.9, defaultOctave()).catch(error => toast(error.message, 'error'));
+    if(accountSession?.role === 'student') playPrivateReference(activeExerciseId,question?.id).catch(error=>toast(error.message,'error'));
+    else {const notes = question?.referenceNotes?.map(parseCurrentNote).filter(Number.isFinite) || [];playNotes(notes,0.9,defaultOctave()).catch(error=>toast(error.message,'error'));}
   } else if (action === 'simulate-demo') {
     const exercise = getExercise(id);
     if (exercise) simulateDemoResponses(exercise);
@@ -3785,16 +3771,14 @@ root.addEventListener('click', event => {
   } else if (action === 'save-grade') {
     const attempt = model.attempts.find(item => item.id === id);
     if (!attempt) return;
-    let total = 0;
+    const scores = {};
     for (const answer of attempt.answers.filter(item => item.manual)) {
       const input = root.querySelector(`[data-grade-answer="${CSS.escape(answer.questionId)}"][data-attempt="${CSS.escape(id)}"]`);
-      answer.manualScore = Math.min(Number(answer.points) || 0, Math.max(0, Number(input?.value) || 0));
-      answer.correct = answer.manualScore >= (Number(answer.points) || 0);
+      scores[answer.questionId] = Number(input?.value || 0);
     }
-    for (const answer of attempt.answers) total += answer.manual ? Number(answer.manualScore) || 0 : answer.correct ? Number(answer.points) || 0 : 0;
-    attempt.score = total;
-    attempt.gradedAt = new Date().toISOString();
-    persist('Correção manual salva.');
+    accountRequest(`/api/attempts/${encodeURIComponent(id)}/review`, {method:'POST',body:JSON.stringify({scores,teacherRating:attempt.teacherRating,teacherNote:attempt.teacherNote})}).then(result=>{
+      Object.assign(attempt,result.attempt);render();toast('Correção salva no servidor.');
+    }).catch(error=>toast(error.message,'error'));
   } else if (action === 'export-data') downloadData().catch(error => toast(error.message, 'error'));
   else if (action === 'import-data') root.querySelector('#import-file').click();
   else if (action === 'preview-lesson') previewLesson(dialog);
@@ -3914,6 +3898,16 @@ root.addEventListener('input', event => {
 });
 
 root.addEventListener('submit', event => {
+  if (event.target.id === 'password-recovery-form') {
+    event.preventDefault(); const status=event.target.querySelector('#recovery-status');
+    accountRequest('/api/auth/recover', {method:'POST',body:JSON.stringify({email:new FormData(event.target).get('email')})}).then(result=>status.textContent=result.message).catch(error=>status.textContent=error.message);
+  }
+  if (event.target.id === 'password-reset-form') {
+    event.preventDefault(); const data=new FormData(event.target); const password=String(data.get('password'));
+    if (password !== data.get('confirmPassword')) {accountError='As senhas não correspondem.';render();return;}
+    (inviteToken ? acceptInvite(inviteToken,password) : updateUser({password})).then(()=>{passwordReset=false;inviteToken='';location.href='/';}).catch(()=>{accountError='Não foi possível alterar a senha. Solicite outro link.';render();});
+  }
+
   if (event.target.id === 'review-attempt-form') {
     event.preventDefault();
     const data = new FormData(event.target);
@@ -3946,7 +3940,8 @@ root.addEventListener('submit', event => {
       username: String(data.get('username') || ''),
       password: String(data.get('password') || '')
     };
-    if (accountSetupNeeded) payload.name = String(data.get('name') || '');
+    if (accountSetupNeeded) Object.assign(payload, {name: String(data.get('name') || ''), email: String(data.get('email') || ''), confirmPassword: String(data.get('confirmPassword') || '')});
+    form.querySelector('button[type=submit],button').disabled=true;
     startOnlineSession(endpoint, payload).catch(error => {
       accountError = error.message;
       render();
@@ -3959,9 +3954,9 @@ root.addEventListener('submit', event => {
     const name = String(data.get('name') || '').trim();
     const username = String(data.get('username') || '').trim();
     const password = String(data.get('password') || '');
-    accountRequest('/api/students', {
+    accountRequest(data.get('accountRole') === 'teacher' ? '/api/teachers' : '/api/students', {
       method: 'POST',
-      body: JSON.stringify({ name, username, password })
+      body: JSON.stringify({ name, username, password, email: String(data.get('email') || '') })
     }).then(result => {
       studentsCache = [...studentsCache, { ...result.student, lastSeenAt: null }]
         .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
@@ -3987,14 +3982,69 @@ window.addEventListener('notarium:error', event => toast(event.detail, 'error'))
 async function boot() {
   try {
     model = await loadModel();
-    saveAccountToken('');
-    accountSession = null;
-    accountError = '';
-    await showAccountLogin();
+    const callback = await handleAuthCallback();
+    if (callback?.type === 'recovery' || callback?.type === 'invite') {
+      passwordReset = true; inviteToken = callback.token || ''; view = 'login'; render(); return;
+    }
+    await hydrateSession();
+    const session = await accountRequest('/api/session');
+    if (session.authenticated && session.model) {
+      accountSession = session.user; model = onlineUserModel(session.model, session.user);
+      view = 'inicio'; startPresenceHeartbeat(); render(); return;
+    }
+    accountSession = null; accountError = ''; await showAccountLogin();
   } catch (error) {
-    root.innerHTML = `<main class="boot-error"><img src="icone.png" alt=""><p class="eyebrow">NOTARIUM</p><h1>Não foi possível abrir seus dados</h1><p>${esc(error.message)}</p><p>Execute <strong>npm.cmd start</strong> ou abra o Notarium pelo servidor local.</p><button class="button secondary" type="button" id="retry">Tentar novamente</button></main>`;
+    root.innerHTML = `<main class="boot-error"><img src="icone.png" alt=""><p class="eyebrow">NOTARIUM</p><h1>Não foi possível abrir seus dados</h1><p>${esc(error.message)}</p><p>Verifique sua conexão e a disponibilidade do serviço.</p><button class="button secondary" type="button" id="retry">Tentar novamente</button></main>`;
     root.querySelector('#retry').addEventListener('click', boot);
   }
 }
 
 boot();
+
+window.addEventListener('beforeunload', event => { if (savingRemote || remoteSaveTimer) {event.preventDefault();event.returnValue='';} });
+
+root.addEventListener('click', async event => {
+  const action=event.target.closest('[data-action]')?.dataset.action;
+  if(action==='download-server-backup') {
+    const id=event.target.closest('[data-backup-id]').dataset.backupId;
+    try {
+      const manifest=await accountRequest(`/api/backups/${encodeURIComponent(id)}/manifest`);
+      const zip=new window.JSZip();zip.file('manifest.json',JSON.stringify(manifest));
+      const snapshot=await fetch(`/api/backups/${encodeURIComponent(id)}/snapshot`);if(!snapshot.ok)throw new Error('Falha no download do banco.');zip.file('snapshot.json.gz',await snapshot.arrayBuffer());
+      for(const file of manifest.files){const response=await fetch(`/api/backups/${encodeURIComponent(id)}/file?key=${encodeURIComponent(file.key)}`);if(!response.ok)throw new Error('Falha no download dos arquivos.');zip.file(`files/${file.blobKey}`,await response.arrayBuffer());}
+      const url=URL.createObjectURL(await zip.generateAsync({type:'blob'}));const link=document.createElement('a');link.href=url;link.download=`notarium-private-${id}.zip`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch(error){toast(error.message,'error');}
+  }
+  if(action==='backup-monitor') {
+    try {const result=await accountRequest('/api/backups');openDialog(`<h2>Backups automáticos</h2><p>Horário: 03h UTC; teste de restauração: domingo às 04h UTC.</p>${result.runs.length ? `<ul>${result.runs.map(run=>`<li><strong>${esc(run.status)}</strong> · ${esc(new Date(run.startedAt).toLocaleString('pt-BR'))}${run.verifiedAt ? ' · Restauração verificada' : ''}${run.error ? ' · Requer atenção' : ''}${run.status === 'complete' ? `<button type="button" class="button secondary" data-action="download-server-backup" data-backup-id="${esc(run.id)}">Baixar cópia privada</button>` : ''}</li>`).join('')}</ul>` : '<p>Nenhuma execução registrada. O agendamento começa na publicação de produção.</p>'}`,'backup-modal');}catch(error){toast(error.message,'error');}
+  }
+  if(action==='open-composition') {
+    try {
+      const {composition}=await accountRequest('/api/composition');
+      const dialog=openDialog(`<h2>Editor de partitura</h2><p>Escreva notas separadas por espaços. Ex.: C4 D4 E4 F#4 Bb3. Use R para pausa. Cada nota vale uma semínima.</p><form id="composition-form" class="stack-form"><label class="field-label">Título<input name="title" maxlength="100" value="${esc(composition.title)}"></label><label class="field-label">Notas<textarea name="notes" rows="4" required>${esc(composition.notes)}</textarea></label><label class="field-label">Andamento (BPM)<input name="tempo" type="number" min="30" max="240" value="${Number(composition.tempo)}" required></label><div id="composition-preview"></div><div class="dialog-actions"><button class="button secondary" type="button" id="composition-play">Ouvir</button><button class="button primary">Salvar partitura</button></div><p id="composition-status" role="status"></p></form>`,'score-modal');
+      let playback=0;
+      const preview=()=>{
+        const data=new FormData(dialog.querySelector('form'));const notes=String(data.get('notes')).trim().split(/\s+/);
+        if(notes.length>256 || notes.some(n=>!(/^[A-G](#|b)?[0-8]$/.test(n)||n==='R'))) throw new Error('Notas inválidas. Use C4, D#4, Bb3 ou R.');
+        const measures=[];
+        for(let i=0;i<notes.length;i+=4){measures.push(`<measure number="${i/4+1}">${i===0?'<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>':''}${notes.slice(i,i+4).map(n=>n==='R'?'<note><rest/><duration>1</duration><type>quarter</type></note>':`<note><pitch><step>${n[0]}</step>${n.includes('#')?'<alter>1</alter>':n.includes('b')?'<alter>-1</alter>':''}<octave>${n.slice(-1)}</octave></pitch><duration>1</duration><type>quarter</type></note>`).join('')}</measure>`);}
+        const xml=`<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">${measures.join('')}</part></score-partwise>`;
+        renderMusicXml(xml,dialog.querySelector('#composition-preview')).catch(error=>{dialog.querySelector('#composition-status').textContent=error.message;});
+        return {title:String(data.get('title')),notes:notes.join(' '),tempo:Number(data.get('tempo'))};
+      };
+      dialog.querySelector('[name=notes]').addEventListener('change',()=>{try{preview();}catch(error){dialog.querySelector('#composition-status').textContent=error.message;}});
+      dialog.querySelector('#composition-play').onclick=async()=>{
+        try {const data=preview();const token=++playback;for(const note of data.notes.split(' ')){if(token!==playback||!dialog.open)break;if(note!=='R')await playNotes([parseNote(note)],60/data.tempo*0.85);await new Promise(resolve=>setTimeout(resolve,60/data.tempo*1000));}}catch(error){dialog.querySelector('#composition-status').textContent=error.message;}
+      };
+      dialog.addEventListener('close',()=>{playback++;});
+      dialog.querySelector('form').onsubmit=async e=>{e.preventDefault();try{await accountRequest('/api/composition',{method:'PUT',body:JSON.stringify(preview())});dialog.querySelector('#composition-status').textContent='Partitura salva na sua conta.';}catch(error){dialog.querySelector('#composition-status').textContent=error.message;}};
+      preview();
+    }catch(error){toast(error.message,'error');}
+  }
+});
+
+async function playPrivateReference(exerciseId,questionId) {
+  const response=await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/audio/${encodeURIComponent(questionId)}`);
+  if(!response.ok) throw new Error('Não foi possível reproduzir a referência musical.');
+  const url=URL.createObjectURL(await response.blob());const audio=new Audio(url);audio.onended=()=>URL.revokeObjectURL(url);await audio.play();
+}

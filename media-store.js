@@ -1,12 +1,8 @@
 import { createId } from './storage.js';
 import { apiUrl } from './api-url.js';
 
-const DATABASE_NAME = 'notarium-local-media';
-const DATABASE_VERSION = 1;
-const STORE_NAME = 'files';
-const MAX_FILE_SIZE = 15 * 1024 * 1024;
+const MAX_FILE_SIZE = 3 * 1024 * 1024;
 const urls = new Map();
-let databasePromise;
 
 function mediaType(file) {
   if (file.type) return file.type;
@@ -19,53 +15,16 @@ function mediaType(file) {
   })[extension] || 'application/octet-stream';
 }
 
-function openDatabase() {
-  if (!globalThis.indexedDB) throw new Error('O armazenamento de arquivos deste navegador não está disponível.');
-  databasePromise ||= new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(STORE_NAME)) {
-        request.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(new Error('Não foi possível abrir o armazenamento local de arquivos.'));
-    request.onblocked = () => reject(new Error('Feche outras abas do Notarium para atualizar o armazenamento de arquivos.'));
-  });
-  return databasePromise;
-}
-
-async function storeRecord(record) {
-  const database = await openDatabase();
-  await new Promise((resolve, reject) => {
-    const transaction = database.transaction(STORE_NAME, 'readwrite');
-    transaction.objectStore(STORE_NAME).put(record);
-    transaction.oncomplete = resolve;
-    transaction.onerror = () => reject(new Error('O navegador não conseguiu salvar o arquivo selecionado.'));
-    transaction.onabort = () => reject(new Error('O armazenamento do navegador recusou este arquivo. Libere espaço e tente novamente.'));
-  });
-}
-
 export async function saveMediaFile(file, id) {
-  if (!(file instanceof Blob) || !file.size) throw new Error('Escolha um arquivo válido e não vazio.');
-  if (file.size > MAX_FILE_SIZE) throw new Error('Para preservar o espaço local, cada arquivo pode ter no máximo 15 MB.');
-  if (navigator.storage?.estimate) {
-    const { quota, usage } = await navigator.storage.estimate();
-    if (quota && usage !== undefined && quota - usage < file.size * 1.15) {
-      throw new Error('Há pouco espaço livre no navegador para este arquivo. Exporte seus dados ou escolha um arquivo menor.');
-    }
-  }
+  if (!(file instanceof Blob) || !file.size || file.size > 3 * 1024 * 1024) throw new Error('Escolha um arquivo de até 3 MB.');
   const mediaId = id || createId();
-  const record = {
-    id: mediaId,
-    blob: file,
-    name: String(file.name || 'material').slice(0, 180),
-    type: mediaType(file),
-    size: file.size,
-    updatedAt: new Date().toISOString()
-  };
-  await storeRecord(record);
-  return { id: mediaId, name: record.name, type: record.type, size: record.size };
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file);
+  });
+  const response = await fetch(apiUrl('/api/media'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:mediaId,name:file.name,type:mediaType(file),dataUrl}) });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'Não foi possível salvar o arquivo.');
+  return result;
 }
 
 export async function getMediaUrl(id) {
@@ -77,21 +36,10 @@ export async function getMediaUrl(id) {
 }
 
 export async function getMediaFile(id) {
-  if (globalThis.indexedDB) {
-    const database = await openDatabase();
-    const record = await new Promise((resolve, reject) => {
-      const request = database.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(id);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(new Error('Não foi possível carregar o arquivo salvo.'));
-    });
-    if (record?.blob) return new File([record.blob], record.name, { type: record.type });
-  }
-  const token = sessionStorage.getItem('notarium-session') || '';
-  if (!token) throw new Error('O arquivo deste material não foi encontrado neste navegador. Restaure-o a partir de um backup.');
   let response;
   try {
     response = await fetch(apiUrl(`/api/media/${encodeURIComponent(id)}`), {
-      headers: { Authorization: `Bearer ${token}` }
+      credentials: 'same-origin'
     });
   } catch {
     throw new Error('Não foi possível conectar ao servidor para carregar este material.');
@@ -123,11 +71,11 @@ export async function mediaAsDataUrl(id) {
 
 export async function restoreMediaDataUrl(dataUrl, name, id) {
   if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:') || dataUrl.length > MAX_FILE_SIZE * 1.5) {
-    throw new Error('O arquivo de mídia do backup é inválido ou excede o limite de 15 MB.');
+    throw new Error('O arquivo de mídia do backup é inválido ou excede o limite de 3 MB.');
   }
   const response = await fetch(dataUrl);
   const blob = await response.blob();
-  if (!blob.size || blob.size > MAX_FILE_SIZE) throw new Error('O arquivo de mídia do backup está vazio ou excede 15 MB.');
+  if (!blob.size || blob.size > MAX_FILE_SIZE) throw new Error('O arquivo de mídia do backup está vazio ou excede 3 MB.');
   const file = new File([blob], String(name || 'material').slice(0, 180), { type: blob.type || 'application/octet-stream' });
   return saveMediaFile(file, id);
 }

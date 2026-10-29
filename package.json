@@ -1,13 +1,35 @@
 {
-  "name": "harmonette-local",
+  "name": "notarium",
   "private": true,
   "scripts": {
-    "start": "node notarium-server.js",
-    "build": "node build-static.js"
+    "start": "netlify dev --port 8889",
+    "build": "node build-static.cjs",
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "test": "tsx --test tests/*.test.*",
+    "check": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "test:browser": "playwright test"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.13",
+    "@netlify/blobs": "^10.7.13",
+    "@netlify/database": "^1.1.0",
+    "@netlify/functions": "^5.3.0",
+    "@netlify/identity": "^1.2.0",
     "chart.js": "^4.6.1",
+    "drizzle-orm": "^1.0.0-beta.22",
+    "json5": "^2.2.3",
     "jszip": "^3.10.2",
     "opensheetmusicdisplay": "^2.2.1"
-  }
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.6",
+    "drizzle-kit": "^1.0.0-beta.22",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "type": "module"
 }

@@ -1,3 +1,4 @@
+import JSON5 from 'json5';
 import { catalog } from './catalog.js';
 
 const STORAGE_KEY = 'notarium-local-v1';
@@ -278,31 +279,12 @@ function parseJavaScriptData(source) {
   if (!expression.startsWith('{') && !expression.startsWith('[')) {
     throw new Error('O arquivo não contém dados JavaScript válidos.');
   }
-  return Function('"use strict"; return (' + expression + ');')();
+  return JSON5.parse(expression);
 }
 
-export async function loadModel() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved !== null) {
-    let parsed;
-    try { parsed = parseJavaScriptData(saved); }
-    catch { throw new Error('Os dados salvos neste navegador estão corrompidos. Importe uma cópia JavaScript válida para continuar.'); }
-    return validateModel(parsed);
-  }
-  const model = validateModel(catalog);
-  saveModel(model);
-  return model;
-}
-
-export function saveModel(model) {
-  const validated = validateModel(model);
-  try { localStorage.setItem(STORAGE_KEY, `export const notariumData = ${serializeJavaScript(validated)};`); }
-  catch (error) {
-    if (error?.name === 'QuotaExceededError') throw new Error('O armazenamento do navegador está cheio. Exporte uma cópia e remova arquivos de mídia grandes.');
-    throw error;
-  }
-  return validated;
-}
+export async function loadModel() { return validateModel(catalog); }
+// Transient view model only. Durable writes go through the authenticated API.
+export function saveModel(model) { return validateModel(model); }
 
 export function importModel(javascriptText) {
   try { return validateModel(parseJavaScriptData(javascriptText)); }
