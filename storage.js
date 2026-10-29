@@ -38,7 +38,7 @@ export function validateModel(value) {
       || (value.exerciseBlocks !== undefined && !Array.isArray(value.exerciseBlocks))
       || (value.trails !== undefined && !Array.isArray(value.trails))
       || (value.trailSettings !== undefined && !Array.isArray(value.trailSettings))) {
-    throw new Error('O arquivo deve conter blocos, aulas, exercícios, tentativas e trilhas em formato JSON.');
+    throw new Error('O arquivo deve conter blocos, aulas, exercícios, tentativas e trilhas em formato JavaScript.');
   }
   const collections = ['blocks', 'lessons', 'exercises', 'attempts'];
   const exerciseBlocks = value.exerciseBlocks || [];
@@ -237,12 +237,56 @@ function getExerciseById(exercises, id) {
   return exercises.find(exercise => exercise.id === id);
 }
 
+function quoteJavaScriptString(value) {
+  return `'${String(value)
+    .replaceAll('\\', '\\\\')
+    .replaceAll("'", "\\'")
+    .replaceAll('\r', '\\r')
+    .replaceAll('\n', '\\n')
+    .replaceAll('\t', '\\t')
+    .replaceAll('\b', '\\b')
+    .replaceAll('\f', '\\f')
+    .replaceAll('\u2028', '\\u2028')
+    .replaceAll('\u2029', '\\u2029')}'`;
+}
+
+function serializeJavaScript(value) {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'string') return quoteJavaScriptString(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (Array.isArray(value)) {
+    return `[${value.map(item => item === undefined ? 'null' : serializeJavaScript(item)).join(',\n')}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .map(([key, item]) => `${quoteJavaScriptString(key)}: ${serializeJavaScript(item)}`);
+    return `{\n${entries.join(',\n')}\n}`;
+  }
+  throw new Error('Não foi possível converter os dados para JavaScript.');
+}
+
+function parseJavaScriptData(source) {
+  const text = String(source || '').replace(/^\uFEFF/, '').trim();
+  if (!text) throw new Error('O arquivo JavaScript está vazio.');
+  let expression = text;
+  const exportMatch = text.match(/(?:export\s+(?:const|let|var)\s+[\w$]+\s*|module\.exports\s*=\s*|(?:const|let|var)\s+[\w$]+\s*)=/);
+  if (exportMatch) expression = text.slice(text.indexOf('=', exportMatch.index) + 1);
+  expression = expression.replace(/;+\s*$/, '').trim();
+  if (!expression.startsWith('{') && !expression.startsWith('[')) {
+    throw new Error('O arquivo não contém dados JavaScript válidos.');
+  }
+  return Function('"use strict"; return (' + expression + ');')();
+}
+
 export async function loadModel() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved !== null) {
     let parsed;
-    try { parsed = JSON.parse(saved); }
-    catch { throw new Error('Os dados salvos neste navegador estão corrompidos. Importe uma cópia JSON válida para continuar.'); }
+    try { parsed = parseJavaScriptData(saved); }
+    catch { throw new Error('Os dados salvos neste navegador estão corrompidos. Importe uma cópia JavaScript válida para continuar.'); }
     return validateModel(parsed);
   }
   const model = validateModel(catalog);
@@ -252,7 +296,7 @@ export async function loadModel() {
 
 export function saveModel(model) {
   const validated = validateModel(model);
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(validated)); }
+  try { localStorage.setItem(STORAGE_KEY, `export const notariumData = ${serializeJavaScript(validated)};`); }
   catch (error) {
     if (error?.name === 'QuotaExceededError') throw new Error('O armazenamento do navegador está cheio. Exporte uma cópia e remova arquivos de mídia grandes.');
     throw error;
@@ -260,13 +304,18 @@ export function saveModel(model) {
   return validated;
 }
 
-export function importModel(jsonText) {
-  let parsed;
-  try { parsed = JSON.parse(jsonText); }
-  catch { throw new Error('O arquivo não é um JSON válido.'); }
-  return validateModel(parsed);
+export function importModel(javascriptText) {
+  try { return validateModel(parseJavaScriptData(javascriptText)); }
+  catch (error) {
+    if (/arquivo/i.test(error.message)) throw error;
+    throw new Error(`O arquivo JavaScript não é válido: ${error.message}`);
+  }
 }
 
 export function exportModel(model) {
-  return JSON.stringify(validateModel(model), null, 2);
+  return `export const notariumData = ${serializeJavaScript(validateModel(model))};`;
+}
+
+export function serializeModel(model) {
+  return serializeJavaScript(validateModel(model));
 }

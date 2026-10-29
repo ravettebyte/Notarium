@@ -7,10 +7,9 @@ const os = require('node:os');
 const root = path.resolve(__dirname);
 const publicRoot = root;
 const port = Number(process.env.PORT) || 4173;
-const dataFile = process.env.NOTARIUM_DATA_FILE
-  ? path.resolve(process.env.NOTARIUM_DATA_FILE)
-  : path.join(root, 'notarium-server-data.json');
-const dataDirectory = path.dirname(dataFile);
+const dataDirectory = process.env.NOTARIUM_DATA_FILE
+  ? path.dirname(path.resolve(process.env.NOTARIUM_DATA_FILE))
+  : root;
 const dataFiles = {
   users: path.join(dataDirectory, 'notarium-users.js'),
   model: path.join(dataDirectory, 'notarium-model.js'),
@@ -28,7 +27,6 @@ const mimeTypes = {
   '.jpeg': 'image/jpeg',
   '.jpg': 'image/jpeg',
   '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.mp3': 'audio/mpeg',
   '.mxl': 'application/vnd.recordare.musicxml',
@@ -64,17 +62,6 @@ function emptyModel() {
 
 async function loadStore() {
   await fs.mkdir(dataDirectory, { recursive: true });
-  let saved = null;
-  try {
-    saved = JSON.parse(await fs.readFile(dataFile, 'utf8'));
-    if (!saved || !Array.isArray(saved.users)
-        || (saved.model !== undefined && saved.model !== null && typeof saved.model !== 'object')) {
-      throw new Error('O arquivo de dados do servidor tem formato inválido.');
-    }
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
-
   async function readJavaScriptData(file, fallback) {
     try {
       await fs.access(file);
@@ -87,11 +74,11 @@ async function loadStore() {
   }
 
   store = {
-    users: await readJavaScriptData(dataFiles.users, saved ? saved.users : []),
-    model: await readJavaScriptData(dataFiles.model, saved ? saved.model : null),
-    media: await readJavaScriptData(dataFiles.media, saved ? saved.media : []),
-    notifications: await readJavaScriptData(dataFiles.notifications, saved ? saved.notifications : []),
-    examSessions: await readJavaScriptData(dataFiles.examSessions, saved ? saved.examSessions : [])
+    users: await readJavaScriptData(dataFiles.users, []),
+    model: await readJavaScriptData(dataFiles.model, null),
+    media: await readJavaScriptData(dataFiles.media, []),
+    notifications: await readJavaScriptData(dataFiles.notifications, []),
+    examSessions: await readJavaScriptData(dataFiles.examSessions, [])
   };
   if (!Array.isArray(store.users)) store.users = [];
   if (!store.model || typeof store.model !== 'object') store.model = null;
@@ -99,24 +86,41 @@ async function loadStore() {
   if (!Array.isArray(store.notifications)) store.notifications = [];
   if (!Array.isArray(store.examSessions)) store.examSessions = [];
 
-  const hasJavaScriptData = await Promise.all(Object.values(dataFiles).map(async file => {
-    try { await fs.access(file); return true; } catch { return false; }
-  })).then(values => values.every(Boolean));
-  if (saved && !hasJavaScriptData) await saveStore();
-
-  const teacher = store.users.find(item => item.role === 'teacher');
-  if (!teacher) {
-    store.users.push({
-      id: crypto.randomUUID(),
-      name: 'Ravette',
-      username: 'prof.ravette',
-      role: 'teacher',
-      passwordHash: hashPassword('ravette'),
-      createdAt: new Date().toISOString()
-    });
+  if (!store.users.some(item => item.role === 'teacher') && store.users.length === 0) {
     store.model ||= emptyModel();
     await saveStore();
   }
+}
+
+function quoteJavaScriptString(value) {
+  return `'${String(value)
+    .replaceAll('\\', '\\\\')
+    .replaceAll("'", "\\'")
+    .replaceAll('\r', '\\r')
+    .replaceAll('\n', '\\n')
+    .replaceAll('\t', '\\t')
+    .replaceAll('\b', '\\b')
+    .replaceAll('\f', '\\f')
+    .replaceAll('\u2028', '\\u2028')
+    .replaceAll('\u2029', '\\u2029')}'`;
+}
+
+function serializeJavaScript(value) {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'string') return quoteJavaScriptString(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (Array.isArray(value)) {
+    return `[${value.map(item => item === undefined ? 'null' : serializeJavaScript(item)).join(',\n')}]`;
+  }
+  if (typeof value === 'object') {
+    return `{\n${Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .map(([key, item]) => `${quoteJavaScriptString(key)}: ${serializeJavaScript(item)}`)
+      .join(',\n')}\n}`;
+  }
+  throw new Error('Não foi possível converter os dados para JavaScript.');
 }
 
 function saveStore() {
@@ -125,14 +129,13 @@ function saveStore() {
       const file = dataFiles[key];
       if (!file) continue;
       const temporaryFile = `${file}.tmp-${process.pid}`;
-      await fs.writeFile(temporaryFile, `module.exports = ${JSON.stringify(value, null, 2)};\n`, {
+      await fs.writeFile(temporaryFile, `module.exports = ${serializeJavaScript(value)};\n`, {
         encoding: 'utf8',
         mode: 0o600
       });
       await fs.rename(temporaryFile, file);
       delete require.cache[require.resolve(file)];
     }
-    await fs.rm(dataFile, { force: true });
   });
   writeQueue = operation.catch(() => {});
   return operation;
@@ -1000,7 +1003,6 @@ const contentTypes = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml'
 };

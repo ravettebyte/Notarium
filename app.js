@@ -1,4 +1,4 @@
-import { createId, exportModel, importModel, loadModel, saveModel, validateModel } from './storage.js';
+import { createId, exportModel, importModel, loadModel, saveModel, serializeModel, validateModel } from './storage.js';
 import { bindPianos, formatNote, parseNote, parseNoteSpelling, parseNotes, pianoMarkup, playNotes } from './piano.js';
 import { extractRhythmEvents, readMusicXmlFile, readMusicXmlUrl, renderMusicXml } from './musicxml.js';
 import { getMediaFile, getMediaUrl, mediaAsDataUrl, restoreMediaDataUrl, saveMediaFile } from './media-store.js';
@@ -450,7 +450,7 @@ function shellMarkup() {
     <footer class="app-footer"><strong>RAVETTE</strong><span>Estudo, prática e música em conjunto</span><span class="footer-year">2026</span></footer>
     <div id="dialog-root"></div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <input id="import-file" type="file" accept="application/json,.json" hidden>
+    <input id="import-file" type="file" accept=".js,.mjs,text/javascript" hidden>
   </div>`;
 }
 
@@ -1401,7 +1401,7 @@ async function showAccountLogin() {
 }
 
 async function startOnlineSession(endpoint, payload) {
-  const localModel = JSON.parse(JSON.stringify(model));
+  const localModel = importModel(exportModel(model));
   const response = await accountRequest(endpoint, {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -3351,28 +3351,28 @@ function mediaReferences(source = model) {
 }
 
 async function downloadData() {
-  const backup = JSON.parse(exportModel(model));
+  const backup = importModel(exportModel(model));
   backup.mediaFiles = await Promise.all(mediaReferences().map(async item => ({
     ...item,
     dataUrl: await mediaAsDataUrl(item.id)
   })));
-  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const javascriptSource = `export const notariumData = ${serializeModel(backup)};`;
+  const blob = new Blob([javascriptSource], { type: 'text/javascript' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `notarium-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.download = `notarium-backup-${new Date().toISOString().slice(0, 10)}.js`;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  toast(`Cópia JSON exportada com ${backup.mediaFiles.length} arquivo(s) de mídia.`);
+  toast(`Cópia JavaScript exportada com ${backup.mediaFiles.length} arquivo(s) de mídia.`);
 }
 
 function importData(file) {
   if (!file) return;
   file.text().then(async textContent => {
-    const raw = JSON.parse(textContent);
-    const backupMedia = Array.isArray(raw.mediaFiles) ? raw.mediaFiles : [];
-    delete raw.mediaFiles;
-    const imported = importModel(JSON.stringify(raw));
+    const imported = importModel(textContent);
+    const backupMedia = Array.isArray(imported.mediaFiles) ? imported.mediaFiles : [];
+    delete imported.mediaFiles;
     if (!confirm('Importar este arquivo substituirá todos os dados locais atuais. Exporte uma cópia antes se quiser guardá-los. Continuar?')) return;
     const mediaIds = new Map();
     for (const media of backupMedia) {
