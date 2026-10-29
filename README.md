@@ -45,7 +45,7 @@ Também é possível hospedar a interface no Netlify e a API em outro serviço N
 2. No Netlify, defina `NOTARIUM_API_URL` com a origem HTTPS da API, sem barra final.
 3. Use o build `npm run build`; o `netlify.toml` publica os arquivos soltos na raiz.
 
-O build do Netlify sem `NOTARIUM_API_URL` fica em modo local: não oferece login online nem sincroniza contas, notificações, respostas ou arquivos enviados. Não publique dados reais sem configurar a API, HTTPS e armazenamento persistente. Faça um backup antes de migrar os dados locais.
+No Netlify, a API é publicada automaticamente em `/api/*` como Netlify Function. As contas, sessões e atividades são salvas no Netlify Database, e os arquivos enviados ficam no Netlify Blobs. Não é necessário configurar uma API externa nem abrir ou editar arquivos JSON. No primeiro acesso de uma instalação nova, crie a conta de professor na própria tela. Os arquivos de dados do servidor local não são publicados nem importados automaticamente. O build publica somente a pasta `dist`, sem os arquivos internos de contas e backups.
 
 ## Conteúdo e dados
 

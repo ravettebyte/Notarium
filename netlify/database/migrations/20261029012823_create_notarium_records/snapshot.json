@@ -1,0 +1,67 @@
+{
+  "version": "8",
+  "dialect": "postgres",
+  "id": "d33412f9-8f90-40bd-a5e3-6054306fd22e",
+  "prevIds": [
+    "00000000-0000-0000-0000-000000000000"
+  ],
+  "ddl": [
+    {
+      "isRlsEnabled": false,
+      "name": "notarium_records",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "kind",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "notarium_records"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "notarium_records"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "value",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "notarium_records"
+    },
+    {
+      "columns": [
+        "kind",
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "notarium_records_pkey",
+      "entityType": "pks",
+      "schema": "public",
+      "table": "notarium_records"
+    }
+  ],
+  "renames": []
+}

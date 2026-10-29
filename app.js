@@ -207,11 +207,11 @@ async function accountRequest(path, options = {}, token = accountToken) {
   try {
     response = await fetch(apiUrl(path), { ...options, headers });
   } catch {
-    throw new Error('Não foi possível conectar ao servidor. Inicie o Notarium com npm.cmd start ou confira a hospedagem.');
+    throw new Error('Não foi possível conectar ao Notarium. Confira sua conexão e tente novamente.');
   }
   let result;
   try { result = await response.json(); }
-  catch { throw new Error('O servidor não respondeu com JSON. Acesse o Notarium pelo servidor oficial, não pelo Live Server.'); }
+  catch { throw new Error('O serviço de acesso está indisponível no momento. Aguarde e tente novamente.'); }
   if (!response.ok) throw new Error(result.error || `A solicitação falhou (${response.status}).`);
   return result;
 }
@@ -1383,7 +1383,7 @@ function showLoginLoading() {
       clearInterval(quoteTimer);
       loadingQuote = null;
       resolve();
-    }, 10_000);
+    }, 800);
   });
 }
 
