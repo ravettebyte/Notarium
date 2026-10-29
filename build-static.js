@@ -12,9 +12,9 @@ const files = [
   'musicxml.js',
   'piano.js',
   'storage.js',
-  'chart.umd.js',
-  'jszip.min.js',
-  'opensheetmusicdisplay.min.js'
+  'chart-umd.js',
+  'jszip-min.js',
+  'opensheetmusicdisplay-min.js'
 ];
 
 async function build() {
