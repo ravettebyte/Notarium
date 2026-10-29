@@ -1457,8 +1457,7 @@ async function logoutAccount() {
   studentsLoaded = false;
   lastCreatedStudentAccess = null;
   model.profile.role = 'teacher';
-  view = 'inicio';
-  render();
+  await showAccountLogin();
   toast(serverLogoutFailed
     ? 'Sessão encerrada neste navegador. O servidor não respondeu; a sessão será descartada quando ele reiniciar.'
     : 'Sessão encerrada. O modo local continua disponível.');
@@ -3993,32 +3992,10 @@ window.addEventListener('notarium:error', event => toast(event.detail, 'error'))
 async function boot() {
   try {
     model = await loadModel();
-    if (accountToken) {
-      try {
-        const session = await accountRequest('/api/session');
-        if (session.authenticated) {
-          accountSession = session.user;
-          startPresenceHeartbeat();
-          notificationsLoaded = false;
-          accountPortalUrl = `${location.origin}${location.pathname}?login=1`;
-          const remote = await accountRequest('/api/model');
-          model = saveModel(onlineUserModel(remote.model, accountSession));
-        } else {
-          saveAccountToken('');
-          accountError = 'Sua sessão online expirou. Entre novamente para sincronizar a conta.';
-        }
-      } catch (error) {
-        saveAccountToken('');
-        accountSession = null;
-        accountError = error.message;
-      }
-    }
-    if (new URLSearchParams(location.search).has('login') && !accountSession) {
-      await showAccountLogin();
-      return;
-    }
-    render();
-    if (accountError) toast(`Modo local ativado: ${accountError}`, 'error');
+    saveAccountToken('');
+    accountSession = null;
+    accountError = '';
+    await showAccountLogin();
   } catch (error) {
     root.innerHTML = `<main class="boot-error"><img src="icone.png" alt=""><p class="eyebrow">NOTARIUM</p><h1>Não foi possível abrir seus dados</h1><p>${esc(error.message)}</p><p>Execute <strong>npm.cmd start</strong> ou abra o Notarium pelo servidor local.</p><button class="button secondary" type="button" id="retry">Tentar novamente</button></main>`;
     root.querySelector('#retry').addEventListener('click', boot);

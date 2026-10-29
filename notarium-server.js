@@ -73,6 +73,20 @@ async function loadStore() {
     if (error.code !== 'ENOENT') throw error;
     await saveStore();
   }
+
+  const teacher = store.users.find(item => item.role === 'teacher');
+  if (!teacher) {
+    store.users.push({
+      id: crypto.randomUUID(),
+      name: 'Ravette',
+      username: 'prof.ravette',
+      role: 'teacher',
+      passwordHash: hashPassword('ravette'),
+      createdAt: new Date().toISOString()
+    });
+    store.model ||= emptyModel();
+    await saveStore();
+  }
 }
 
 function saveStore() {
