@@ -1,4 +1,8 @@
-const STORAGE_KEY = 'notarium-local-v1';
+let STORAGE_KEY = 'notarium-local-v1';
+
+export function setAccountStorageScope(userId) {
+  STORAGE_KEY = userId ? `notarium-account-${userId}` : 'notarium-local-v1';
+}
 const DEFAULT_DATA_URL = new URL('catalog.json', import.meta.url);
 
 function isRecord(value) {

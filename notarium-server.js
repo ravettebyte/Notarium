@@ -10,7 +10,8 @@ const port = Number(process.env.PORT) || 4173;
 const dataFile = process.env.NOTARIUM_DATA_FILE
   ? path.resolve(process.env.NOTARIUM_DATA_FILE)
   : path.join(root, 'notarium-server-data.json');
-const sessions = new Map();
+function createApi(options = {}) {
+const sessions = options.sessions || new Map();
 const loginFailures = new Map();
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -37,7 +38,7 @@ const mimeTypes = {
   '.woff2': 'font/woff2',
   '.xml': 'application/xml; charset=utf-8'
 };
-let store = { users: [], model: null, media: [], notifications: [], examSessions: [] };
+let store = options.store || { users: [], model: null, media: [], notifications: [], examSessions: [] };
 let writeQueue = Promise.resolve();
 
 function emptyModel() {
@@ -76,6 +77,7 @@ async function loadStore() {
 }
 
 function saveStore() {
+  if (options.persist) return options.persist(store);
   const operation = writeQueue.then(async () => {
     const temporaryFile = `${dataFile}.tmp`;
     await fs.writeFile(temporaryFile, JSON.stringify(store), { encoding: 'utf8', mode: 0o600 });
@@ -157,6 +159,7 @@ function bearerToken(request) {
 }
 
 function currentUser(request) {
+  if (options.userId) return store.users.find(user => user.id === options.userId) || null;
   const userId = sessions.get(bearerToken(request));
   return store.users.find(user => user.id === userId) || null;
 }
@@ -177,8 +180,8 @@ function notificationsFor(user) {
 }
 
 function modelFor(user) {
-  if (!store.model) return emptyModel();
-  if (user.role === 'teacher') return store.model;
+  if (!store.model) store.model = emptyModel();
+  if (user.role === 'teacher') return { ...store.model, profile: { ...store.model.profile, ...user.profile, displayName: user.name, username: user.username, role: user.role } };
 
   const model = JSON.parse(JSON.stringify(store.model));
   const lessons = model.lessons.filter(lesson => lesson.published === true);
@@ -199,15 +202,15 @@ function modelFor(user) {
     lessonIds: (exercise.lessonIds || []).filter(id => lessonIds.has(id))
   }));
   model.attempts = model.attempts.filter(attempt =>
-    (attempt.studentId === user.id || (!attempt.studentId && attempt.profileName === user.name)) && !attempt.isDemo);
+    attempt.studentId === user.id && !attempt.isDemo);
   model.trails = (model.trails || []).filter(step => step.studentId === user.id);
   model.trailSettings = (model.trailSettings || []).filter(settings => settings.studentId === user.id);
   model.profile = {
-    ...model.profile,
+    ...emptyModel().profile,
+    ...user.profile,
     displayName: user.name,
     username: user.username,
-    role: 'student',
-    avatarDataUrl: ''
+    role: 'student'
   };
   return model;
 }
@@ -242,6 +245,7 @@ function referencedMediaIds(model) {
 }
 
 function portalUrl(request) {
+  if (options.origin) return new URL('/login', options.origin).href;
   if (process.env.PUBLIC_URL) return new URL('/?login=1', process.env.PUBLIC_URL).href;
   return new URL('/?login=1', `http://${request.headers.host || 'localhost'}`).href;
 }
@@ -581,6 +585,7 @@ async function handleApi(request, response, url) {
     const previousName = user.name;
     user.name = name;
     user.username = username;
+    user.profile = { ...user.profile, bio: String(body.bio || '').slice(0, 500), avatarDataUrl: /^data:image\/(png|jpeg|webp);base64,/.test(body.avatarDataUrl || '') && body.avatarDataUrl.length <= 300000 ? body.avatarDataUrl : '', defaultOctave: Math.min(8, Math.max(0, Number(body.defaultOctave) || 4)), theme: body.theme === 'dark' ? 'dark' : 'light' };
     if (store.model) {
       if (user.role === 'teacher') {
         store.model.profile.displayName = name;
@@ -626,6 +631,10 @@ async function handleApi(request, response, url) {
       ...(previous.exercises || []).filter(item => item.published && !['draft', 'archived'].includes(item.status))
         .map(item => `exercise:${item.id}`)
     ]);
+    for (const step of model.trails || []) {
+      const saved = (previous.trails || []).find(item => item.id === step.id && item.studentId === step.studentId);
+      if (saved) { step.status = saved.status; step.completed = saved.completed; step.completedAt = saved.completedAt; }
+    }
     store.model = model;
     const newlyPublished = [
       ...(model.lessons || []).filter(item => item.published && !previousPublished.has(`lesson:${item.id}`))
@@ -809,7 +818,11 @@ async function handleApi(request, response, url) {
     const index = store.users.findIndex(item => item.id === studentRoute[1] && item.role === 'student');
     if (index < 0) return sendJson(response, 404, { error: 'Conta de aluno não encontrada.' });
     const [removed] = store.users.splice(index, 1);
-    if (store.model) store.model.attempts = store.model.attempts.filter(attempt => attempt.studentId !== removed.id);
+    if (store.model) {
+      store.model.attempts = store.model.attempts.filter(attempt => attempt.studentId !== removed.id);
+      store.model.trails = (store.model.trails || []).filter(step => step.studentId !== removed.id);
+      store.model.trailSettings = (store.model.trailSettings || []).filter(item => item.studentId !== removed.id);
+    }
     for (const [token, userId] of sessions) if (userId === removed.id) sessions.delete(token);
     await saveStore();
     return sendJson(response, 200, { ok: true });
@@ -1062,7 +1075,12 @@ async function start() {
   });
 }
 
-start().catch(error => {
+return { handleApi, handleRequest, start, modelFor, publicUser, emptyModel };
+}
+
+module.exports = { createApi };
+
+if (require.main === module) createApi().start().catch(error => {
   console.error('Não foi possível iniciar o Notarium:', error.message);
   process.exitCode = 1;
 });
