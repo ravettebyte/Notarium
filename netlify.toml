@@ -1,17 +1,28 @@
 [build]
 command = "npm run build"
-publish = "."
-
+publish = "dist"
 [build.environment]
-NODE_VERSION = "20"
-
+NODE_VERSION = "22"
+[functions]
+directory = "netlify/functions"
+node_bundler = "esbuild"
+external_node_modules = ["@electric-sql/pglite"]
+[dev]
+command = "npm run dev"
+targetPort = 5173
+port = 8889
 [[redirects]]
 from = "/login"
 to = "/index.html"
 status = 200
-
 [[headers]]
 for = "/*"
 [headers.values]
 X-Content-Type-Options = "nosniff"
 Referrer-Policy = "strict-origin-when-cross-origin"
+Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+X-Frame-Options = "DENY"
+Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: https:; connect-src 'self' blob: data:; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+[functions.backup-worker-background]
+included_files = ["server/restore-schema.sql"]

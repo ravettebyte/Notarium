@@ -1,82 +1,84 @@
 # Notarium
 
-Plataforma de aprendizagem musical com aulas, blocos de exercícios, avaliações e prática interativa de ritmo no piano. O modo local funciona sem conta; o modo compartilhado exige a API Node do Notarium.
+Plataforma musical em português, com a interface original, API em Netlify Functions, PostgreSQL gerenciado, arquivos privados em Blobs e contas em Netlify Identity. Este repositório contém código; dados privados e backups pertencem aos serviços de armazenamento.
 
-## Iniciar o Notarium
+## Instalação e desenvolvimento
 
-1. Instale as dependências locais do projeto uma vez:
+Use Node.js 22 e o repositório privado https://github.com/ravettebyte/Notarium.
 
-   ```powershell
-   npm.cmd install
-   ```
+```sh
+npm ci
+npm start
+```
 
-2. Inicie o servidor local:
+Abra http://localhost:8889. O comando inicia Netlify Dev com o frontend Vite e emulação das funções. É necessário estar vinculado ao projeto Netlify autorizado. Conexões de Database, Identity e Blobs são fornecidas pelo ambiente; não cole credenciais no código. Consulte `.env.example` para a única preferência opcional de retenção.
 
-   ```powershell
-   npm.cmd start
-   ```
+O ambiente fornecido nesta alteração ainda não tinha as migrações aplicadas. Antes do primeiro deploy, a API pode responder 503 porque as tabelas ainda não existem. Não execute SQL de criação manualmente contra a produção. As migrações em `netlify/database/migrations` são aplicadas pelo processo de publicação.
 
-3. Abra `http://127.0.0.1:4173` no navegador. Encerre com `Ctrl+C`.
+## Publicação
 
-Também é possível abrir `index.html` com a extensão **Live Server** do VS Code. Não abra o arquivo diretamente como `file://`: o catálogo inicial é carregado por `fetch`. Para iniciar o servidor Harmonette legado, use `npm.cmd run legacy`; ele continua separado do Notarium.
+O projeto já está associado ao GitHub. O processo Netlify executa `npm run build`, publica somente `dist` e empacota as funções separadamente. A lista de arquivos públicos é explícita: banco antigo, backups, servidores antigos, dependências, documentação e configurações privadas não são copiados. As instruções antigas de publicar toda a raiz foram substituídas.
 
-## Organização do projeto
+O primeiro acesso cria a primeira conta de professor/administrador na API, com confirmação de senha. Uma transação PostgreSQL serializa a verificação e impede duas contas iniciais. Depois disso, professores cadastram alunos; somente o administrador cadastra outros professores. Os papéis são consultados no banco, nunca aceitos do navegador. O endpoint público de cadastro do Identity é negado pelo evento `userValidate`. As contas controladas usam a API administrativa do Identity e começam confirmadas pelo serviço; isso **não comprova a propriedade do e-mail**. Valide essa propriedade antes de matricular estudantes, sobretudo menores. A recuperação de senha confirma o acesso à caixa postal.
 
-- Os arquivos principais do Notarium ficam soltos na raiz: interface, estilos, módulos JavaScript, servidor, build, banco de dados e catálogo inicial.
-- Bibliotecas usadas pelo navegador ficam soltas na raiz como arquivos JavaScript separados.
-- Não há pastas de origem para arquivos do Harmonette.
+Na publicação de produção, confira a ativação do Identity, o domínio e o remetente dos e-mails. Teste recuperação real, cookies HTTPS, evento de bloqueio de cadastro público e a primeira conta em um ambiente de homologação. Não crie contas de teste com dados de alunos. A ativação foi preparada no projeto; o envio de e-mail e as sessões reais não foram validados neste ambiente.
 
-Os arquivos de configuração do npm e do Netlify ficam na raiz para que as ferramentas os encontrem automaticamente.
+## Recursos conectados
 
-## Publicar na internet
+Aulas e blocos, exercícios e avaliações, atribuição à turma ou a alunos selecionados, respostas, correção automática no servidor, notas manuais parciais, comentários, notificações, presença visível aos professores, perfis privados e materiais enviados usam persistência no servidor. O aluno recebe apenas seus registros e os conteúdos autorizados. As respostas corretas não seguem nos enunciados; referências auditivas são geradas como WAV privado pelo servidor.
 
-O projeto oferece duas opções. Para publicar tudo junto em um serviço Node, use o blueprint `render.yaml`: ele instala as dependências, inicia o Notarium, verifica `/api/health` e guarda as contas e atividades em um disco persistente. Antes do primeiro login, configure o serviço com:
+O piano usa Web Audio, incluindo volume e acordes. O editor de partitura em Configurações salva uma composição por usuário, aceita notas, acidentes e pausas, mostra MusicXML e reproduz a sequência no andamento escolhido. Nesta versão ele usa semínimas e compasso 4/4; não é um editor completo de notação. As ferramentas anteriores de harmonia, avaliação e leitura MusicXML foram preservadas.
 
-- `NODE_ENV=production`
-- `NOTARIUM_DATA_FILE=/var/data/notarium-server-data.json`
-- `PUBLIC_URL=https://SEU-DOMINIO/`
-- CORS separado apenas quando o frontend estiver em domínio diferente.
+Arquivos têm limite de **3 MB**, adequado ao transporte das Functions com JSON/base64. PDF, PNG, JPEG, WebP, MP3, WAV, OGG, MP4, WebM, MusicXML e MXL têm validação de extensão, MIME e assinatura básica. Isso não substitui antivírus. Vídeos maiores devem ser disponibilizados por links permitidos; o limite não é anunciado como 15 MB. Arquivos são imutáveis no Blobs e os registros apontam para a versão atual. A remoção lógica exige desvinculação; objetos antigos podem continuar no armazenamento para preservar backups. Não há coleta automática desses objetos nesta versão.
 
-Use um plano com disco persistente e faça backup do arquivo JSON antes de trocar de hospedagem. No primeiro acesso público, crie a conta de professor com uma senha forte. Os alunos só devem ser cadastrados depois da instalação.
+O navegador conserva apenas preferências de som e os mecanismos de sessão da biblioteca Identity; não é banco principal. Os dados antigos do navegador não são apagados nem importados automaticamente para outra conta. Importações aceitam dados JSON/JSON5 sem executar JavaScript.
 
-Também é possível hospedar a interface no Netlify e a API em outro serviço Node com disco persistente:
+## Banco e evolução
 
-1. Hospede `notarium-server.js` e configure `PUBLIC_URL` com a URL do site e `CORS_ORIGIN` com o domínio HTTPS exato do frontend. Não use `*` para contas autenticadas.
-2. No Netlify, defina `NOTARIUM_API_URL` com a origem HTTPS da API, sem barra final.
-3. Use o build `npm run build`; o `netlify.toml` publica os arquivos soltos na raiz.
+`db/schema.ts` define tabelas de usuários, conteúdos, respostas, materiais, trilhas, notificações, avaliações, composições, limites de acesso e operações de backup. Campos específicos dos conteúdos são JSONB, com IDs e referências importantes em colunas relacionais. Aulas, respostas e perfis não são arquivos locais. As relações e os campos de entrada são validados no servidor.
 
-O build do Netlify sem `NOTARIUM_API_URL` fica em modo local: não oferece login online nem sincroniza contas, notificações, respostas ou arquivos enviados. Não publique dados reais sem configurar a API, HTTPS e armazenamento persistente. Faça um backup antes de migrar os dados locais.
+Para alterar a estrutura:
 
-## Conteúdo e dados
+```sh
+npm run db:generate -- --name add_descricao_da_mudanca
+```
 
-- Crie blocos de aulas, aulas com conteúdo em blocos, blocos de exercícios e atividades. Organize os exercícios em grupos antes de criá-los e relacione-os às aulas quando necessário.
-- Ao adicionar materiais no editor de aulas e exercícios, escolha entre enviar um arquivo ou informar um link. Imagens, áudio, vídeos e PDFs são apresentados em formatos adequados, com opção de abrir ou baixar quando aplicável.
-- Os arquivos enviados ficam no IndexedDB deste navegador, com limite de 15 MB por arquivo e sujeitos ao espaço disponível. Os links continuam dependendo de estarem acessíveis; partituras carregadas por arquivo ou URL precisam ser MusicXML válido e ter até 5 MB. Arquivos `.mxl` são aceitos no envio.
-- Os exercícios suportam múltipla escolha, verdadeiro/falso, respostas escritas, acordes no piano, reconhecimento auditivo e partituras MusicXML/XML ou MXL.
-- A leitura rítmica usa partitura MusicXML: o aluno inicia após a contagem audível de quatro tempos e toca um único botão para cada batida; erros, tempos e repetições permitidas ficam no relatório da resposta.
-- Configure acordes com notas, intervalos, sequência de montagem, dicas por etapa e critério de correção. No critério por notas, o professor pode ativar ou desativar equivalências enarmônicas (como C# e Db); por padrão, elas são aceitas. O piano permite ajustar o volume e reproduzir as notas selecionadas e o acorde montado. Clique no piano ou em uma tecla para ativar os atalhos: C, D, E, F, G, A e B tocam a primeira oitava; Shift+C, Shift+D, Shift+E, Shift+F, Shift+G, Shift+A e Shift+B tocam a seguinte; 1 a 5 acionam as teclas pretas, com Shift para a oitava seguinte.
-- No exercício de acorde, digite notas separadas por espaços (por exemplo, `C E G`, `Bb D F` ou `F#5 A5 C#6`) ou selecione-as no piano. A oitava é opcional e usa C4 por padrão; altere a oitava padrão em **Configurações**. O editor diferencia acordes em qualquer ordem, sequências didáticas e disposições/inversões específicas.
-- O perfil local permite editar nome, @usuário, biografia e avatar; todos os perfis são públicos e não há opção de privacidade.
-- Na aba **Trilha**, crie percursos diferentes para cada aluno de demonstração. Cada etapa pode ter nome, descrição, figura rítmica desenhada como notação musical, escolha entre nota, pausa ou sequência automática de melodia e pausas, e atalho para um bloco de aulas ou diretamente para uma aula. Configure por aluno o título da composição (ou sorteie sugestões como “Concerto da Aurora”), a clave de sol, dó ou fá, a armadura em tonalidade maior ou menor e a fórmula de compasso. A pauta mostra as notas em posições melódicas dentro do pentagrama, pausas, acidentes, compasso e barras de compasso; colcheias e semicolcheias são agrupadas sem atravessar os tempos (em 6/8, 9/8 e 12/8, cada grupo de três colcheias forma um tempo composto). A legenda mostra as cinco figuras e suas pausas correspondentes. Cada cartão curto sob uma nota abre os detalhes da etapa, seu bloco/aula e o estado atual. Na visualização de aluno, as etapas podem ser iniciadas, concluídas ou retomadas; o botão de acesso leva ao conteúdo relacionado. Notas que atravessam barras de compasso são divididas e ligadas, e algumas frases recebem ligaduras de expressão. As escolhas, a ordem e o progresso ficam salvos neste navegador.
-- A navegação tem uma aba independente **Grupo**. Com uma conta online de professor, ela mostra alunos reais cadastrados, presença e progresso calculado pelas respostas do servidor. No modo local, ela usa a visualização de demonstração fictícia separada dos dados reais.
-- Cada exercício pode ficar em rascunho, publicado, encerrado ou arquivado. Respostas objetivas e musicais são corrigidas segundo o gabarito e os critérios configurados; respostas que exigem avaliação humana permanecem pendentes até a correção manual.
-- No editor, use **Salvar rascunho** para guardar uma atividade incompleta e continuar depois. Para publicar, escolha **Publicado** e use o botão de publicação; avisos de validação aparecem dentro do editor, desaparecem após alguns segundos e levam ao campo que precisa de atenção.
-- Ao digitar acordes no enunciado, a assistência musical oferece símbolos como ♯, ♭, ♮, ♭5, ♯5, ♭9 e ♯9. Selecione um trecho para aplicar negrito ou escolher uma cor; a formatação é preservada e exibida com segurança para os alunos.
-- Na aba **Grupo**, a conta de professor pode abrir **Respostas** para revisar participação, aproveitamento, pontuações, dificuldades por questão, respostas individuais e gráficos. Respostas pendentes não são contadas como incorretas.
-- Tema claro/escuro e perfil local ficam salvos neste navegador.
-- Em **Configurações**, escolha o tema, a oitava padrão, a nota e o volume dos cliques. O som de interação vem habilitado por padrão em volume máximo.
-- O catálogo inicial em `catalog.json` é vazio, sem exemplos apresentados como conteúdo real.
+Inclua a nova migração no histórico. Não altere migrações já aplicadas. Atualize também `server/restore-schema.sql`, usado exclusivamente pelo teste isolado de restauração, concatenando as migrações na ordem. Não execute esse arquivo diretamente na produção. As atualizações de conteúdo usam revisão para detectar edições antigas em outra aba; respostas e correções já recebidas não são substituídas pelo modelo enviado pelo professor.
 
-O modo local usa `localStorage` e IndexedDB, vinculados à origem usada pelo navegador. Contas online, alunos, exercícios e respostas são salvos pelo servidor Node em `NOTARIUM_DATA_FILE`. Os dados demonstrativos antigos ficam restritos ao modo local; as telas conectadas a uma conta usam alunos, acessos e respostas reais.
+A API atual carrega o conteúdo da escola por requisição e usa um bloqueio transacional global. Isso prioriza consistência para uma escola pequena; exige paginação, consultas específicas e bloqueios menores antes de operar com grandes volumes. Todos os professores autorizados administram o mesmo espaço. Turmas independentes com professores isolados e vínculos de matrícula próprios ainda não foram implementadas.
 
-## Limitações e privacidade
+## Validação
 
-No modo local, o perfil professor/aluno é apenas uma visualização do navegador. O grupo fictício e seus indicadores existem somente para demonstração. Com uma conta online, senhas, alunos, conteúdo, mídias, notificações, respostas e presenças são controlados pelo servidor. Gere HTTPS, um domínio público e armazenamento persistente antes de compartilhar o acesso.
+```sh
+npm run check
+npm test
+npx playwright install chromium
+# Em outro terminal, mantenha npm start ativo:
+npm run test:browser
+```
 
-Os arquivos do Harmonette legado foram mantidos na raiz como `legacy-server.js`, `legacy-app.js`, `legacy-platform.js`, `legacy-app.css` e `legacy-style.css`; seus dados ficam em `database.json`. Eles não são usados pelo Notarium nem importados automaticamente. A aplicação atual não envia os dados locais para esse servidor. Backups locais podem ser guardados diretamente na raiz do projeto.
+Os testes de API usam um PostgreSQL descartável (PGlite), com o schema SQL real e as operações reais do repositório. Identity e Blobs são adaptadores substituídos por implementações de teste; isso não valida a disponibilidade nem as configurações desses serviços em produção. Os testes de navegador usam a interface real e respostas controladas da API. Consulte [os resultados e limites dos testes](docs/validation.md).
 
-## Requisitos
+## Backups e recuperação
 
-- Node.js e npm para iniciar o servidor local e instalar as bibliotecas de partituras.
-- Visual Studio Code com Live Server (opcional).
-- Navegador moderno; Web Audio é necessário para ouvir o piano.
+Leia [o procedimento operacional](docs/recovery.md). Há um agendador diário às **03h UTC** que despacha um trabalho autenticado por autorização de uso único, com execução em função background. O teste semanal de restauração é despachado aos domingos às **04h UTC**. As rotinas não dependem de visitas ao site e só são agendadas no deploy publicado de produção.
+
+Backups incluem tabelas da aplicação, metadados, arquivos e checksums em outro armazenamento Blobs. Não incluem hashes de senha nem credenciais internas do Identity. Assim, não constituem recuperação independente completa do provedor de autenticação. Uma perda do serviço Identity exige recriação segura de identidades e remapeamento de IDs; esse procedimento assistido continua pendente de implementação automatizada.
+
+## Segurança e operação
+
+A biblioteca Identity gerencia senhas e tokens. A aplicação não guarda senhas nem hashes próprios. Cookies são Secure/SameSite da biblioteca; não se promete HttpOnly porque a biblioteca também suporta fluxos no navegador. Há validação de origem nas mutações, limites persistentes de login por IP e por conta, consultas parametrizadas, arquivos privados, sanitização de texto e uma política CSP. Nenhum botão do navegador concede função administrativa.
+
+Atualize dependências em homologação, execute os testes e revise `npm audit` antes de publicar. Mantenha o repositório privado. Não envie `.env`, dados antigos de usuários, arquivos de alunos ou ZIPs privados ao GitHub. Os arquivos locais antigos foram preservados no checkout e excluídos da nova publicação; se já estiverem no histórico, `.gitignore` não remove versões passadas. O proprietário deve revisar esse histórico e o acesso ao repositório.
+
+O professor pode excluir alunos; os dados relacionais vinculados são removidos e as credenciais são revogadas no Identity. Não há exclusão autônoma do administrador nem uma política legal de retenção/consentimento implementada. A API disponibiliza exportação autenticada dos próprios dados em `/api/account/export`. Defina consentimento, retenção e atendimento aos responsáveis antes de usar dados de menores.
+
+## GitHub e versões
+
+As alterações desta execução ficaram no workspace para o fluxo de versionamento/publicação da plataforma. Nenhum commit, push ou tag foi executado por esta alteração e nenhum novo endereço de publicação foi confirmado. Depois de revisar o conjunto, o mantenedor pode organizar commits por banco/API, interface e recuperação; proteger `main`; executar testes em uma branch; e marcar uma versão após homologar. Não inclua dados privados nos commits.
+
+## Serviços, custos e pendências
+
+São usados Netlify Database, Blobs, Functions, agendamento e Identity do projeto existente. Não foi contratado um serviço externo pago. Consumo de banco, armazenamento, transferências, e-mails e execução está sujeito ao plano e às cotas Netlify; o administrador precisa conferir a precificação antes de aumentar o uso. Não foi configurada uma cópia independente da conta/provedor Netlify.
+
+Ainda dependem de publicação/homologação: migrações, provisionamento, e-mails reais, sessões e permissões com Identity real, agendamento de produção, redeploy sem perda e recuperação a partir dos serviços remotos. Também ficam pendentes: turmas independentes, verificação obrigatória da propriedade do e-mail no cadastro inicial, mural/perfis compartilhados por consentimento, editor completo de notação, backup exportável das credenciais Identity, restauração automática em outro provedor e alertas externos por e-mail de falhas. O alerta implementado aparece nas notificações dos professores e no monitor de backups.
