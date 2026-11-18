@@ -1,0 +1,18 @@
+{
+  "name": "Notarium",
+  "short_name": "Notarium",
+  "description": "Estude, pratique e acompanhe a evolução na música.",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f7faff",
+  "theme_color": "#3157d5",
+  "icons": [
+    {
+      "src": "icone.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

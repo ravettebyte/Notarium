@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3157d5">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="notarium-api-base" content="">
+  <meta name="color-scheme" content="light">
+  <title>Notarium — Aprenda música no seu ritmo</title>
+  <meta name="description" content="Estude, pratique e evolua na música com a Notarium.">
+  <link rel="icon" type="image/png" href="icone.png">
+  <link rel="stylesheet" href="index.css?v=polish-1">
+</head>
+<body>
+  <a class="skip-link" href="#app-main">Ir para o conteúdo principal</a>
+  <nav id="notarium-tabs" class="primary-nav" aria-label="Navegação principal" hidden>
+    <button class="nav-item" type="button" data-view="inicio"><span>Visão geral</span></button>
+    <button class="nav-item" type="button" data-view="aulas"><span>Aulas</span></button>
+    <button class="nav-item" type="button" data-view="exercicios"><span>Exercícios</span></button>
+    <button class="nav-item" type="button" data-view="avaliacoes"><span>Avaliações</span></button>
+    <button class="nav-item" type="button" data-view="trilha"><span>Trilha</span></button>
+    <button class="nav-item" type="button" data-view="grupo"><span>Grupo</span></button>
+    <button class="nav-item" type="button" data-view="alunos"><span>Alunos</span></button>
+  </nav>
+  <main id="notarium-root" class="app-shell">
+    <header class="app-header">
+      <a class="brand" href="#" aria-label="Página inicial da Notarium">
+        <span class="brand-image"><img src="icone.png" alt=""></span>
+        <span class="brand-copy">
+          <strong>Notarium</strong>
+          <small>Aprenda música no seu ritmo</small>
+        </span>
+      </a>
+
+      <nav class="header-nav" aria-label="Áreas da plataforma" hidden>
+        <span class="nav-item active">Visão geral</span>
+        <span class="nav-item">Aulas</span>
+        <span class="nav-item">Exercícios</span>
+        <span class="nav-item">Grupo</span>
+      </nav>
+
+      <div class="header-actions">
+        <span class="local-pill"><i></i> Servidor compartilhado</span>
+        <button class="button secondary settings-gear" type="button" aria-label="Configurações">&#9881;</button>
+        <button class="profile-button" type="button" aria-label="Abrir perfil">
+          <span class="avatar">M</span>
+          <span class="profile-copy">
+            <strong>Músico</strong>
+            <small>Minha conta</small>
+          </span>
+          <span class="chevron">⌄</span>
+        </button>
+      </div>
+    </header>
+
+    <nav class="primary-nav" aria-label="Navegação principal">
+      <button class="nav-item active" type="button" data-view="inicio" aria-current="page"><span>Visão geral</span></button>
+      <button class="nav-item" type="button" data-view="aulas"><span>Aulas</span></button>
+      <button class="nav-item" type="button" data-view="exercicios"><span>Exercícios</span></button>
+      <button class="nav-item" type="button" data-view="avaliacoes"><span>Avaliações</span></button>
+      <button class="nav-item" type="button" data-view="trilha"><span>Trilha</span></button>
+      <button class="nav-item" type="button" data-view="grupo"><span>Grupo</span></button>
+      <button class="nav-item" type="button" data-view="alunos"><span>Alunos</span></button>
+    </nav>
+
+    <section class="main-content" aria-label="Visão geral">
+      <div class="breadcrumb">
+        <span>Plataforma</span>
+        <span>›</span>
+        <strong id="current-page-label">Visão geral</strong>
+      </div>
+
+      <div id="view-inicio" class="page-view">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">Bem-vindo de volta</p>
+          <h1>Seu ritmo de aprendizado</h1>
+        </div>
+        <button class="button primary" type="button" data-view="aulas">Explorar aulas</button>
+      </div>
+
+      <section class="hero-panel" aria-label="Próxima aula">
+        <div class="hero-copy">
+          <p class="eyebrow">Próxima aula</p>
+          <h2>Continue sua jornada musical</h2>
+          <p>Retome as aulas, pratique exercícios e acompanhe seu progresso.</p>
+          <button class="hero-action" type="button" data-view="aulas">Continuar aprendendo <span>→</span></button>
+        </div>
+        <div class="hero-art" aria-hidden="true">
+          <span class="hero-spark">✦</span>
+          <span class="hero-note">♪</span>
+        </div>
+      </section>
+
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Seu progresso</p>
+          <h2>Resumo da semana</h2>
+        </div>
+      </div>
+
+      <section class="dashboard-grid" aria-label="Estatísticas">
+        <article class="metric-card">
+          <span class="metric-icon">♬</span>
+          <div>
+            <span class="metric-label">Aulas concluídas</span>
+            <strong>0</strong>
+          </div>
+        </article>
+        <article class="metric-card">
+          <span class="metric-icon">✓</span>
+          <div>
+            <span class="metric-label">Exercícios realizados</span>
+            <strong>0</strong>
+          </div>
+        </article>
+        <article class="metric-card">
+          <span class="metric-icon">★</span>
+          <div>
+            <span class="metric-label">Pontuação média</span>
+            <strong>—</strong>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Atividades</p>
+            <h2>Aulas recentes</h2>
+          </div>
+        </div>
+        <div class="empty-state">
+          <span class="empty-state-icon">♫</span>
+          <p>Ainda não há atividades registradas.</p>
+          <button class="button secondary" type="button" data-view="aulas">Explorar aulas</button>
+        </div>
+      </section>
+      </div>
+      <section id="view-content" class="page-view" aria-live="polite" tabindex="-1" hidden></section>
+    </section>
+  </main>
+  <script src="chart.umd.js"></script>
+  <script type="module" src="app.js?v=polish-1"></script>
+</body>
+</html>
