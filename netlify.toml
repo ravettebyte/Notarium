@@ -1,9 +1,6 @@
+# O site é publicado somente a partir da pasta Notarium-pronto2/Notarium.
 [build]
+  base = "Notarium-pronto2/Notarium"
   command = "npm run build"
-  publish = "."
-  functions = "."
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/api/:splat"
-  status = 200
+  publish = "dist"
+  functions = "netlify/functions"

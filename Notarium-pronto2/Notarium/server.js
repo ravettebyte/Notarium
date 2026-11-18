@@ -363,10 +363,65 @@ function parseId(value, label = 'Identificador') {
   return result;
 }
 
-function createApplication(options = {}) {
-  const dataDir = path.resolve(options.dataDir || process.env.NOTARIUM_DATA_DIR || DEFAULT_DATA_DIR);
+function createFileStorage(dataDir) {
   const storeFile = path.join(dataDir, 'store.json');
   const mediaDir = path.join(dataDir, 'media');
+  return {
+    async init() {
+      await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
+      await fs.mkdir(mediaDir, { recursive: true, mode: 0o700 });
+    },
+    async readStore() {
+      try {
+        return await fs.readFile(storeFile, 'utf8');
+      } catch (error) {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      }
+    },
+    async writeStore(content) {
+      await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
+      const tempFile = path.join(dataDir, `.store-${crypto.randomUUID()}.tmp`);
+      await fs.writeFile(tempFile, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          await fs.rename(tempFile, storeFile);
+          break;
+        } catch (error) {
+          if (!['EPERM', 'EBUSY'].includes(error.code) || attempt >= 4) {
+            await fs.unlink(tempFile).catch(() => {});
+            throw error;
+          }
+          await new Promise(resolve => setTimeout(resolve, 25 * (attempt + 1)));
+        }
+      }
+    },
+    async backup(content) {
+      const backupDir = path.join(dataDir, 'backups');
+      await fs.mkdir(backupDir, { recursive: true, mode: 0o700 });
+      const backupFile = path.join(backupDir, `store-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+      await fs.writeFile(backupFile, content, { encoding: 'utf8', mode: 0o600 });
+      const backupFiles = (await fs.readdir(backupDir)).filter(name => /^store-.*\.json$/.test(name)).sort();
+      for (const oldName of backupFiles.slice(0, Math.max(0, backupFiles.length - 30))) {
+        await fs.rm(path.join(backupDir, oldName), { force: true });
+      }
+    },
+    async writeMedia(filename, data) {
+      await fs.mkdir(mediaDir, { recursive: true, mode: 0o700 });
+      await fs.writeFile(path.join(mediaDir, filename), data, { flag: 'wx', mode: 0o600 });
+    },
+    async readMedia(filename) {
+      return fs.readFile(path.join(mediaDir, filename));
+    },
+    async deleteMedia(filename) {
+      await fs.unlink(path.join(mediaDir, filename));
+    }
+  };
+}
+
+function createApplication(options = {}) {
+  const dataDir = path.resolve(options.dataDir || process.env.NOTARIUM_DATA_DIR || DEFAULT_DATA_DIR);
+  const storage = options.storage || createFileStorage(dataDir);
   const examIdleMs = Number(options.examIdleMs ?? EXAM_IDLE_MS);
   let store;
   let writeQueue = Promise.resolve();
@@ -374,40 +429,24 @@ function createApplication(options = {}) {
   const loginAttempts = new Map();
 
   async function persist(next) {
-    await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
-    const tempFile = path.join(dataDir, `.store-${crypto.randomUUID()}.tmp`);
-    await fs.writeFile(tempFile, JSON.stringify(next), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        await fs.rename(tempFile, storeFile);
-        break;
-      } catch (error) {
-        if (!['EPERM', 'EBUSY'].includes(error.code) || attempt >= 4) {
-          await fs.unlink(tempFile).catch(() => {});
-          throw error;
-        }
-        await new Promise(resolve => setTimeout(resolve, 25 * (attempt + 1)));
-      }
-    }
+    await storage.writeStore(JSON.stringify(next));
     const now = Date.now();
     if (now - lastBackupAt >= 24 * 60 * 60 * 1000) {
-      const backupDir = path.join(dataDir, 'backups');
-      await fs.mkdir(backupDir, { recursive: true, mode: 0o700 });
-      const backupFile = path.join(backupDir, `store-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-      await fs.copyFile(storeFile, backupFile, 0);
+      await storage.backup(JSON.stringify(next));
       lastBackupAt = now;
-      const backupFiles = (await fs.readdir(backupDir)).filter(name => /^store-.*\.json$/.test(name)).sort();
-      for (const oldName of backupFiles.slice(0, Math.max(0, backupFiles.length - 30))) {
-        await fs.rm(path.join(backupDir, oldName), { force: true });
-      }
     }
   }
 
   async function initialize() {
-    await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
-    await fs.mkdir(mediaDir, { recursive: true, mode: 0o700 });
+    await storage.init();
     try {
-      const saved = JSON.parse(await fs.readFile(storeFile, 'utf8'));
+      const raw = await storage.readStore();
+      if (raw === null) {
+        const error = new Error('Store not found.');
+        error.code = 'ENOENT';
+        throw error;
+      }
+      const saved = JSON.parse(raw);
       if (!saved || saved.version !== 1 || !Array.isArray(saved.users)
         || !Array.isArray(saved.sessions) || !saved.model) {
         throw new Error('Unsupported or invalid Notarium data file.');
@@ -453,7 +492,7 @@ function createApplication(options = {}) {
         throw new Error(`Bundled media "${item.name}" is invalid.`);
       }
       const filename = `${crypto.randomUUID()}.bin`;
-      await fs.writeFile(path.join(mediaDir, filename), data, { flag: 'wx', mode: 0o600 });
+      await storage.writeMedia(filename, data);
       next.media.push({
         id: item.id,
         filename,
@@ -790,8 +829,7 @@ function createApplication(options = {}) {
       const mediaId = parseId(String(body.id || ''), 'Identificador do arquivo');
       const { type, data } = validateMediaData(body.dataUrl);
       const filename = `${crypto.randomUUID()}.bin`;
-      await fs.mkdir(mediaDir, { recursive: true, mode: 0o700 });
-      await fs.writeFile(path.join(mediaDir, filename), data, { flag: 'wx', mode: 0o600 });
+      await storage.writeMedia(filename, data);
       const media = {
         id: mediaId,
         filename,
@@ -809,7 +847,7 @@ function createApplication(options = {}) {
           next.media.push(media);
         });
       } catch (error) {
-        await fs.unlink(path.join(mediaDir, filename)).catch(() => {});
+        await storage.deleteMedia(filename).catch(() => {});
         throw error;
       }
       return json(res, 201, { media: { id: media.id, name: media.name, type: media.type, size: media.size } });
@@ -825,7 +863,7 @@ function createApplication(options = {}) {
         fail(404, 'Arquivo não encontrado.');
       }
       if (!/^[a-f0-9-]{36}\.bin$/i.test(item.filename)) fail(404, 'Arquivo não encontrado.');
-      const content = await fs.readFile(path.join(mediaDir, item.filename));
+      const content = await storage.readMedia(item.filename);
       res.writeHead(200, {
         'Content-Type': item.type,
         'Content-Length': content.length,
@@ -919,7 +957,7 @@ function createApplication(options = {}) {
         return ownedMedia.map(item => item.filename);
       });
       await Promise.all(deletedFiles.map(filename =>
-        fs.unlink(path.join(mediaDir, filename)).catch(() => {})));
+        storage.deleteMedia(filename).catch(() => {})));
       return json(res, 200, { ok: true });
     }
 
