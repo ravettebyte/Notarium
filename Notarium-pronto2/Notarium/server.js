@@ -462,8 +462,9 @@ function createApplication(options = {}) {
     if (!Array.isArray(store.learningProgress)) store.learningProgress = [];
     const next = clone(store);
     let seeded = false;
-    // Em produção não existe conta padrão: o primeiro professor é criado em /api/auth/bootstrap.
-    if (process.env.NODE_ENV !== 'production' && !next.users.some(user => user.role === 'teacher')) {
+    // Cria a conta padrão do professor (professor / professor123) quando ainda não há professor.
+    const seedDefaultTeacher = options.seedDefaultTeacher ?? process.env.NODE_ENV !== 'production';
+    if (seedDefaultTeacher && !next.users.some(user => user.role === 'teacher')) {
       const credentials = await passwordRecord('professor123');
       const account = {
         id: id(),
